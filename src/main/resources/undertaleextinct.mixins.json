@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.g2806.undertaleextinct.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "undertaleextinct.refmap.json",
+  "mixins": [
+    "SpawnHelperMixin",
+    "MobEntityMixin"
+  ],
+  "client": [],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

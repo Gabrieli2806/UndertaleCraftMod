@@ -43,9 +43,9 @@ public class UndertaleAttackOverlay {
     private boolean sliderTextureLoaded = false;
     private boolean slashTexturesLoaded = false;
     
-    // Frame dimensions (smaller size for better positioning)
-    private static final int FRAME_WIDTH = 400;  // Smaller width
-    private static final int FRAME_HEIGHT = 90;  // Smaller height
+    // Frame dimensions (smaller and thicker for better positioning)
+    private static final int FRAME_WIDTH = 541;  // Even smaller width
+    private static final int FRAME_HEIGHT = 107; // Thicker height
     
     // Slider dimensions (made thinner)
     private static final int SLIDER_WIDTH = 4;  // Thinner slider (was 14)

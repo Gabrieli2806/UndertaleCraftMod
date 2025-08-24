@@ -12,6 +12,7 @@ public class UndertaleExtinctClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("UndertaleExtinctClient");
     private static AnimationPlayer animationPlayer;
     private static UndertaleAttackOverlay attackOverlay;
+    private static UndertaleAttackGunOverlay gunAttackOverlay;
 
     @Override
     public void onInitializeClient() {
@@ -22,6 +23,9 @@ public class UndertaleExtinctClient implements ClientModInitializer {
         
         // Initialize attack overlay
         attackOverlay = new UndertaleAttackOverlay();
+        
+        // Initialize gun attack overlay
+        gunAttackOverlay = new UndertaleAttackGunOverlay();
         
         // Initialize attack handler
         UndertaleAttackHandler.initialize();
@@ -53,6 +57,16 @@ public class UndertaleExtinctClient implements ClientModInitializer {
             });
         });
         
+        // Handle gun attack start packet
+        ClientPlayNetworking.registerGlobalReceiver(UndertaleNetworking.START_GUN_ATTACK_PACKET, (client, handler, buf, responseSender) -> {
+            client.execute(() -> {
+                if (gunAttackOverlay != null) {
+                    gunAttackOverlay.startGunAttack();
+                    LOGGER.info("Started gun attack overlay from server command");
+                }
+            });
+        });
+        
         LOGGER.info("Registered client-side packet handlers for targeted commands");
     }
     
@@ -68,5 +82,12 @@ public class UndertaleExtinctClient implements ClientModInitializer {
      */
     public static UndertaleAttackOverlay getAttackOverlay() {
         return attackOverlay;
+    }
+    
+    /**
+     * Get the gun attack overlay instance
+     */
+    public static UndertaleAttackGunOverlay getGunAttackOverlay() {
+        return gunAttackOverlay;
     }
 }

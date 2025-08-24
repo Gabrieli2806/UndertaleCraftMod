@@ -100,7 +100,15 @@ public class UndertaleAttackOverlay {
             sliderMoving = false;
             sliderFinished = true;
             calculateAttackValue();
-            LOGGER.info("Slider stopped by click at position {}, attack value: {}", sliderPosition, attackValue);
+        }
+    }
+    
+    public void onClick() {
+        // External click handler for UndertaleAttackHandler
+        if (sliderMoving) {
+            sliderMoving = false;
+            sliderFinished = true;
+            calculateAttackValue();
         }
     }
     

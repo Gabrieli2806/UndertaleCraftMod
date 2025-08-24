@@ -274,6 +274,33 @@ public class UndertaleExtinct implements ModInitializer {
                                 return 1;
                             })));
             
+            // Server-side undertaleattackgun command with player targeting
+            dispatcher.register(CommandManager.literal("undertaleattackgun")
+                    .executes(context -> {
+                        // Start gun attack for command sender (self)
+                        ServerCommandSource source = context.getSource();
+                        if (source.getEntity() instanceof ServerPlayerEntity player) {
+                            UndertaleNetworking.sendStartGunAttackToPlayer(player);
+                            source.sendFeedback(() -> Text.literal("§6Starting gun attack interface..."), false);
+                            return 1;
+                        }
+                        return 0;
+                    })
+                    .then(CommandManager.argument("target", EntityArgumentType.player())
+                            .requires(source -> source.hasPermissionLevel(2)) // Admin required for targeting
+                            .executes(context -> {
+                                // Start gun attack for target player
+                                ServerPlayerEntity targetPlayer = EntityArgumentType.getPlayer(context, "target");
+                                ServerCommandSource source = context.getSource();
+                                
+                                UndertaleNetworking.sendStartGunAttackToPlayer(targetPlayer);
+                                source.sendFeedback(() -> Text.literal("§6Starting gun attack interface for " + targetPlayer.getName().getString() + "..."), false);
+                                
+                                // Also notify the target player
+                                targetPlayer.sendMessage(Text.literal("§6An admin started the gun attack interface for you!"), false);
+                                return 1;
+                            })));
+            
             // Attack scoreboard commands
             dispatcher.register(CommandManager.literal("attackstats")
                     .requires(source -> source.hasPermissionLevel(0)) // Allow all players

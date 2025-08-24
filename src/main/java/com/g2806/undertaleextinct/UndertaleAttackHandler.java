@@ -16,6 +16,7 @@ public class UndertaleAttackHandler {
     public static void initialize() {
         // Note: Client-side command removed to avoid conflicts with server-side command
         // The server-side /undertaleattack command now handles all functionality
+        // Click detection is handled individually by each overlay's tick events
         LOGGER.info("Attack handler initialized - using server-side commands only");
     }
     
@@ -29,6 +30,23 @@ public class UndertaleAttackHandler {
             LOGGER.info("Toggled Undertale attack overlay");
         } else {
             LOGGER.warn("Attack overlay not available");
+        }
+    }
+    
+    /**
+     * Toggle the gun attack overlay directly
+     */
+    public static void toggleGunAttackOverlay() {
+        UndertaleAttackGunOverlay overlay = UndertaleExtinctClient.getGunAttackOverlay();
+        if (overlay != null) {
+            if (overlay.isActive()) {
+                overlay.stopGunAttack();
+            } else {
+                overlay.startGunAttack();
+            }
+            LOGGER.info("Toggled Undertale gun attack overlay");
+        } else {
+            LOGGER.warn("Gun attack overlay not available");
         }
     }
 }

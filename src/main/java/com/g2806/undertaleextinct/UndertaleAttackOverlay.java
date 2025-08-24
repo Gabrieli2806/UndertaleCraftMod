@@ -26,8 +26,8 @@ public class UndertaleAttackOverlay {
     private static final Identifier ATTACK_FRAME_TEXTURE = new Identifier(MOD_ID, "textures/gui/attack_frame.png");
     private static final Identifier ATTACK_SLIDER_TEXTURE = new Identifier(MOD_ID, "textures/gui/attack_slider.png");
     
-    // Slash animation textures (1.png to 12.png)
-    private static final int SLASH_FRAMES = 12;
+    // Slash animation textures (1.png to 5.png)
+    private static final int SLASH_FRAMES = 5;
     private static final List<Identifier> SLASH_TEXTURES = new ArrayList<>();
     
     static {
@@ -151,19 +151,26 @@ public class UndertaleAttackOverlay {
         attackValue = Math.round(100 - (distanceFrom50 * 2)); // Linear scoring
         attackValue = Math.max(0, Math.min(100, attackValue)); // Clamp to 0-100
         
-        // Start slash animation
-        startSlashAnimation();
+        // Start slash animation only if attack was successful (score > 0)
+        if (attackValue > 0) {
+            startSlashAnimation();
+        }
         
         showResult = true;
         
         // Send attack value to server for scoreboard
         sendAttackValueToServer(attackValue);
         
-        // Close overlay after slash animation finishes + 1 second
+        // Close overlay after appropriate delay
         new Thread(() -> {
             try {
-                // Wait for slash animation to complete (12 frames * 3 ticks * 50ms per tick = ~1.8 seconds)
-                Thread.sleep(2500); // Extra buffer time
+                if (attackValue > 0) {
+                    // Wait for slash animation to complete (5 frames * 3 ticks * 50ms per tick = ~0.75 seconds)
+                    Thread.sleep(1500); // Extra buffer time
+                } else {
+                    // No animation, close faster for misses
+                    Thread.sleep(1000);
+                }
                 stopAttack();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -350,9 +357,9 @@ public class UndertaleAttackOverlay {
         // Get current slash texture
         Identifier currentSlashTexture = SLASH_TEXTURES.get(currentSlashFrame);
         
-        // Render in center of screen - assuming slash textures are reasonably sized
-        int slashWidth = 200;  // Adjust based on your actual texture size
-        int slashHeight = 200; // Adjust based on your actual texture size
+        // Render in center of screen - 2x smaller than original size
+        int slashWidth = 100;  // Half the original size (200 -> 100)
+        int slashHeight = 100; // Half the original size (200 -> 100)
         int slashX = (screenWidth - slashWidth) / 2;
         int slashY = (screenHeight - slashHeight) / 2;
         

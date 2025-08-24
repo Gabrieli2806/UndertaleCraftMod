@@ -12,6 +12,9 @@ import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Undertale attack overlay that renders on the HUD (similar to AnimationPlayer)
  */
@@ -23,10 +26,22 @@ public class UndertaleAttackOverlay {
     private static final Identifier ATTACK_FRAME_TEXTURE = new Identifier(MOD_ID, "textures/gui/attack_frame.png");
     private static final Identifier ATTACK_SLIDER_TEXTURE = new Identifier(MOD_ID, "textures/gui/attack_slider.png");
     
+    // Slash animation textures (1.png to 12.png)
+    private static final int SLASH_FRAMES = 12;
+    private static final List<Identifier> SLASH_TEXTURES = new ArrayList<>();
+    
+    static {
+        // Initialize slash texture identifiers
+        for (int i = 1; i <= SLASH_FRAMES; i++) {
+            SLASH_TEXTURES.add(new Identifier(MOD_ID, "textures/gui/slash/" + i + ".png"));
+        }
+    }
+    
     // Overlay state
     private boolean isActive = false;
     private boolean texturesLoaded = false;
     private boolean sliderTextureLoaded = false;
+    private boolean slashTexturesLoaded = false;
     
     // Frame dimensions (smaller size for better positioning)
     private static final int FRAME_WIDTH = 400;  // Smaller width
@@ -44,6 +59,12 @@ public class UndertaleAttackOverlay {
     private int attackValue = 0; // 0-100 value based on click position
     private boolean showResult = false; // show the result value
     
+    // Slash animation state
+    private boolean playingSlashAnimation = false;
+    private int currentSlashFrame = 0;
+    private long lastSlashFrameTime = 0;
+    private static final int SLASH_FRAME_DELAY = 3; // ticks between slash frames (faster animation)
+    
     public UndertaleAttackOverlay() {
         registerHudRender();
         registerEvents();
@@ -59,11 +80,14 @@ public class UndertaleAttackOverlay {
     }
     
     private void registerEvents() {
-        // Register tick events for slider animation and input checking
+        // Register tick events for slider animation, slash animation, and input checking
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (isActive) {
                 if (sliderTextureLoaded && sliderMoving) {
                     updateSliderPosition();
+                }
+                if (playingSlashAnimation) {
+                    updateSlashAnimation();
                 }
                 checkForClick(client);
             }
@@ -94,6 +118,25 @@ public class UndertaleAttackOverlay {
         }
     }
     
+    private void updateSlashAnimation() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.world == null) return;
+        
+        long currentTime = client.world.getTime();
+        
+        if (currentTime - lastSlashFrameTime >= SLASH_FRAME_DELAY) {
+            currentSlashFrame++;
+            lastSlashFrameTime = currentTime;
+            
+            // Stop animation after all frames
+            if (currentSlashFrame >= SLASH_FRAMES) {
+                playingSlashAnimation = false;
+                currentSlashFrame = 0;
+                LOGGER.info("Slash animation completed");
+            }
+        }
+    }
+    
     private void calculateAttackValue() {
         // Convert slider position (0.0-1.0) to attack value (0-100)
         // Position 50 (middle) = Score 100 (best), Position 0/100 (edges) = Score 0 (worst)
@@ -108,20 +151,38 @@ public class UndertaleAttackOverlay {
         attackValue = Math.round(100 - (distanceFrom50 * 2)); // Linear scoring
         attackValue = Math.max(0, Math.min(100, attackValue)); // Clamp to 0-100
         
+        // Start slash animation
+        startSlashAnimation();
+        
         showResult = true;
         
         // Send attack value to server for scoreboard
         sendAttackValueToServer(attackValue);
         
-        // Close overlay after 2 seconds
+        // Close overlay after slash animation finishes + 1 second
         new Thread(() -> {
             try {
-                Thread.sleep(2000);
+                // Wait for slash animation to complete (12 frames * 3 ticks * 50ms per tick = ~1.8 seconds)
+                Thread.sleep(2500); // Extra buffer time
                 stopAttack();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }).start();
+    }
+    
+    private void startSlashAnimation() {
+        if (!slashTexturesLoaded) return;
+        
+        playingSlashAnimation = true;
+        currentSlashFrame = 0;
+        
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.world != null) {
+            lastSlashFrameTime = client.world.getTime();
+        }
+        
+        LOGGER.info("Started slash animation");
     }
     
     private void sendAttackValueToServer(int attackValue) {
@@ -155,6 +216,16 @@ public class UndertaleAttackOverlay {
             var sliderResource = client.getResourceManager().getResource(ATTACK_SLIDER_TEXTURE);
             sliderTextureLoaded = sliderResource.isPresent();
             
+            // Check slash animation textures
+            slashTexturesLoaded = true;
+            for (int i = 0; i < SLASH_FRAMES; i++) {
+                var slashResource = client.getResourceManager().getResource(SLASH_TEXTURES.get(i));
+                if (slashResource.isEmpty()) {
+                    slashTexturesLoaded = false;
+                    break;
+                }
+            }
+            
             if (texturesLoaded) {
                 LOGGER.info("Attack frame texture loaded for overlay: {}", ATTACK_FRAME_TEXTURE);
             } else {
@@ -167,10 +238,17 @@ public class UndertaleAttackOverlay {
                 LOGGER.info("Attack slider texture NOT found for overlay: {}, using fallback", ATTACK_SLIDER_TEXTURE);
             }
             
+            if (slashTexturesLoaded) {
+                LOGGER.info("All {} slash animation textures loaded successfully", SLASH_FRAMES);
+            } else {
+                LOGGER.info("Some slash animation textures missing, animation will be skipped");
+            }
+            
         } catch (Exception e) {
             LOGGER.warn("Failed to load attack textures for overlay", e);
             texturesLoaded = false;
             sliderTextureLoaded = false;
+            slashTexturesLoaded = false;
         }
     }
     
@@ -200,6 +278,11 @@ public class UndertaleAttackOverlay {
         
         // Render sliding attack meter
         renderSlider(context, frameX, frameY, client);
+        
+        // Render slash animation in center of screen
+        if (playingSlashAnimation && slashTexturesLoaded) {
+            renderSlashAnimation(context, screenWidth, screenHeight);
+        }
         
         // Show step text or result
         String displayText;
@@ -261,6 +344,24 @@ public class UndertaleAttackOverlay {
         LOGGER.debug("Rendering slider at position ({}, {}) with slider position {}", sliderX, sliderY, sliderPosition);
     }
     
+    private void renderSlashAnimation(DrawContext context, int screenWidth, int screenHeight) {
+        if (currentSlashFrame < 0 || currentSlashFrame >= SLASH_FRAMES) return;
+        
+        // Get current slash texture
+        Identifier currentSlashTexture = SLASH_TEXTURES.get(currentSlashFrame);
+        
+        // Render in center of screen - assuming slash textures are reasonably sized
+        int slashWidth = 200;  // Adjust based on your actual texture size
+        int slashHeight = 200; // Adjust based on your actual texture size
+        int slashX = (screenWidth - slashWidth) / 2;
+        int slashY = (screenHeight - slashHeight) / 2;
+        
+        // Draw the current slash frame
+        context.drawTexture(currentSlashTexture, slashX, slashY, 0, 0, slashWidth, slashHeight, slashWidth, slashHeight);
+        
+        LOGGER.debug("Rendering slash animation frame {} at center ({}, {})", currentSlashFrame + 1, slashX, slashY);
+    }
+    
     /**
      * Start showing the attack overlay
      */
@@ -276,8 +377,13 @@ public class UndertaleAttackOverlay {
         attackValue = 0;
         showResult = false;
         
+        // Reset slash animation state
+        playingSlashAnimation = false;
+        currentSlashFrame = 0;
+        lastSlashFrameTime = 0;
+        
         isActive = true;
-        LOGGER.info("Attack overlay started - Step 2: slider moves left to right, click to stop!");
+        LOGGER.info("Attack overlay started - slider moves left to right, click to stop and trigger slash animation!");
     }
     
     /**

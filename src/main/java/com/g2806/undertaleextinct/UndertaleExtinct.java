@@ -44,10 +44,16 @@ public class UndertaleExtinct implements ModInitializer {
     private static final Set<Identifier> extinctMobs = ConcurrentHashMap.newKeySet();
     private static final Map<Identifier, Integer> killCounts = new ConcurrentHashMap<>();
     private static final Map<UUID, Identifier> nextKillTargets = new ConcurrentHashMap<>();
+    
+    // Animation player instance
+    private static AnimationPlayer animationPlayer;
 
     @Override
     public void onInitialize() {
         LOGGER.info("Undertale Extinct mod initialized!");
+        
+        // Initialize animation player
+        animationPlayer = new AnimationPlayer();
 
         registerCommands();
         registerEvents();
@@ -208,6 +214,26 @@ public class UndertaleExtinct implements ModInitializer {
                                         Text.literal("§6Extinction threshold set to " + newThreshold + " kills. The genocide route requires more determination."), false);
                                 return 1;
                             })));
+
+            // Command to play Undertale animation
+            dispatcher.register(CommandManager.literal("playundertaleanimation")
+                    .requires(source -> source.hasPermissionLevel(2))
+                    .executes(context -> {
+                        if (animationPlayer != null) {
+                            if (animationPlayer.isPlaying()) {
+                                context.getSource().sendFeedback(() ->
+                                        Text.literal("§6Animation is already playing!"), false);
+                            } else {
+                                animationPlayer.startAnimation();
+                                context.getSource().sendFeedback(() ->
+                                        Text.literal("§6Starting Undertale animation..."), false);
+                            }
+                        } else {
+                            context.getSource().sendFeedback(() ->
+                                    Text.literal("§cAnimation player is not initialized!"), false);
+                        }
+                        return 1;
+                    }));
         });
     }
 

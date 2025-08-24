@@ -29,9 +29,9 @@ public class AnimationPlayer {
     // Animation state
     private boolean isPlaying = false;
     private int currentFrame = 0;
-    private int totalFrames = 94; // Based on the frames in resources
+    private int totalFrames = 81; // Based on the frames in resources
     private long lastFrameTime = 0;
-    private int frameDelay = 3; // Ticks between frames (20 ticks = 1 second)
+    private int frameDelay = 2; // Ticks between frames (20 ticks = 1 second)
     
     // Texture management
     private List<Identifier> frameTextures = new ArrayList<>();
@@ -49,7 +49,7 @@ public class AnimationPlayer {
         
         @Override
         public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-            if (isPlaying && texturesLoaded && frameTextures.size() > currentFrame) {
+            if (isPlaying && texturesLoaded && currentFrame < frameTextures.size()) {
                 // Get screen dimensions
                 int screenWidth = this.width;
                 int screenHeight = this.height;
@@ -58,8 +58,10 @@ public class AnimationPlayer {
                 context.fill(0, 0, screenWidth, screenHeight, 0xFF000000);
                 
                 // Render the current frame fullscreen
-                Identifier currentTexture = frameTextures.get(currentFrame);
-                context.drawTexture(currentTexture, 0, 0, 0, 0, screenWidth, screenHeight, screenWidth, screenHeight);
+                if (currentFrame >= 0 && currentFrame < frameTextures.size()) {
+                    Identifier currentTexture = frameTextures.get(currentFrame);
+                    context.drawTexture(currentTexture, 0, 0, 0, 0, screenWidth, screenHeight, screenWidth, screenHeight);
+                }
             }
         }
         
@@ -87,38 +89,47 @@ public class AnimationPlayer {
         
         if (texturesLoaded) return; // Already loaded
         
+        frameTextures.clear(); // Clear any existing textures
+        
         try {
             // Load all animation frames
             for (int i = 1; i <= totalFrames; i++) {
                 String frameNumber = String.format("%03d", i);
                 String texturePath = "textures/animation/ezgif-frame-" + frameNumber + ".jpg";
+                Identifier textureLocation = new Identifier(MOD_ID, texturePath);
                 Identifier frameId = new Identifier(MOD_ID, "animation_frame_" + frameNumber);
                 
                 // Load the texture from resources
-                var resourceOpt = client.getResourceManager().getResource(new Identifier(MOD_ID, texturePath));
+                var resourceOpt = client.getResourceManager().getResource(textureLocation);
                 if (resourceOpt.isEmpty()) {
-                    LOGGER.warn("Could not find texture: {}", texturePath);
-                    continue;
+                    LOGGER.error("Could not find texture: {} (frame {})", texturePath, i);
+                    return; // Don't proceed if any frame is missing
                 }
                 
-                InputStream inputStream = resourceOpt.get().getInputStream();
-                NativeImage image = NativeImage.read(inputStream);
-                NativeImageBackedTexture texture = new NativeImageBackedTexture(image);
-                
-                // Register the texture
-                client.getTextureManager().registerTexture(frameId, texture);
-                frameTextures.add(frameId);
-                
-                inputStream.close();
+                try (InputStream inputStream = resourceOpt.get().getInputStream()) {
+                    NativeImage image = NativeImage.read(inputStream);
+                    NativeImageBackedTexture texture = new NativeImageBackedTexture(image);
+                    
+                    // Register the texture
+                    client.getTextureManager().registerTexture(frameId, texture);
+                    frameTextures.add(frameId);
+                }
             }
             
-            texturesLoaded = true;
-            LOGGER.info("Loaded {} animation frames", frameTextures.size());
+            if (frameTextures.size() == totalFrames) {
+                texturesLoaded = true;
+                LOGGER.info("Successfully loaded all {} animation frames", frameTextures.size());
+            } else {
+                LOGGER.error("Failed to load all frames. Expected: {}, Loaded: {}", totalFrames, frameTextures.size());
+                frameTextures.clear();
+            }
             
         } catch (IOException e) {
             LOGGER.error("Failed to load animation textures", e);
+            frameTextures.clear();
         } catch (Exception e) {
             LOGGER.error("Unexpected error loading textures", e);
+            frameTextures.clear();
         }
     }
     
@@ -136,7 +147,7 @@ public class AnimationPlayer {
     
     private void updateAnimation() {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) return;
+        if (client == null || client.world == null) return;
         
         long currentTime = client.world.getTime();
         
@@ -144,8 +155,9 @@ public class AnimationPlayer {
             currentFrame++;
             lastFrameTime = currentTime;
             
-            // Stop at the end (no looping)
+            // Stop at frame 81 (totalFrames) - no looping
             if (currentFrame >= totalFrames) {
+                LOGGER.info("Animation completed - reached final frame {}", totalFrames);
                 stopAnimation();
                 return;
             }

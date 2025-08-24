@@ -19,10 +19,6 @@ public class UndertaleExtinctMod implements ModInitializer {
         UndertaleExtinct extinctionSystem = new UndertaleExtinct();
         extinctionSystem.onInitialize();
 
-        // Initialize the inventory save system
-        InventorySaveSystem inventorySystem = new InventorySaveSystem();
-        inventorySystem.initialize();
-
         LOGGER.info("Undertale Extinct Mod initialized successfully!");
     }
 }

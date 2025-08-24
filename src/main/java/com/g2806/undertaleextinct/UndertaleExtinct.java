@@ -7,6 +7,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.command.argument.RegistryEntryArgumentType;
+import net.minecraft.command.argument.EntityArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
@@ -25,6 +26,7 @@ import net.minecraft.util.ActionResult;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateManager;
+import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +56,9 @@ public class UndertaleExtinct implements ModInitializer {
         
         // Initialize animation player
         animationPlayer = new AnimationPlayer();
+        
+        // Initialize networking
+        UndertaleNetworking.registerServerPackets();
 
         registerCommands();
         registerEvents();
@@ -215,26 +220,172 @@ public class UndertaleExtinct implements ModInitializer {
                                 return 1;
                             })));
 
-            // Command to play Undertale animation
+            // Command to play Undertale animation (self or target player)
             dispatcher.register(CommandManager.literal("playundertaleanimation")
                     .requires(source -> source.hasPermissionLevel(2))
                     .executes(context -> {
-                        if (animationPlayer != null) {
-                            if (animationPlayer.isPlaying()) {
-                                context.getSource().sendFeedback(() ->
-                                        Text.literal("§6Animation is already playing!"), false);
-                            } else {
-                                animationPlayer.startAnimation();
-                                context.getSource().sendFeedback(() ->
-                                        Text.literal("§6Starting Undertale animation..."), false);
-                            }
-                        } else {
-                            context.getSource().sendFeedback(() ->
-                                    Text.literal("§cAnimation player is not initialized!"), false);
+                        // Play for command sender (self)
+                        ServerCommandSource source = context.getSource();
+                        if (source.getEntity() instanceof ServerPlayerEntity player) {
+                            UndertaleNetworking.sendStartAnimationToPlayer(player);
+                            source.sendFeedback(() -> Text.literal("§6Starting Undertale animation for you..."), false);
+                            return 1;
                         }
-                        return 1;
+                        return 0;
+                    })
+                    .then(CommandManager.argument("target", EntityArgumentType.player())
+                            .executes(context -> {
+                                // Play for target player
+                                ServerPlayerEntity targetPlayer = EntityArgumentType.getPlayer(context, "target");
+                                ServerCommandSource source = context.getSource();
+                                
+                                UndertaleNetworking.sendStartAnimationToPlayer(targetPlayer);
+                                source.sendFeedback(() -> Text.literal("§6Starting Undertale animation for " + targetPlayer.getName().getString() + "..."), false);
+                                
+                                // Also notify the target player
+                                targetPlayer.sendMessage(Text.literal("§6An admin started the Undertale animation for you!"), false);
+                                return 1;
+                            })));
+
+            // Server-side undertaleattack command with player targeting
+            dispatcher.register(CommandManager.literal("undertaleattack")
+                    .executes(context -> {
+                        // Start attack for command sender (self)
+                        ServerCommandSource source = context.getSource();
+                        if (source.getEntity() instanceof ServerPlayerEntity player) {
+                            UndertaleNetworking.sendStartAttackToPlayer(player);
+                            source.sendFeedback(() -> Text.literal("§6Starting attack interface..."), false);
+                            return 1;
+                        }
+                        return 0;
+                    })
+                    .then(CommandManager.argument("target", EntityArgumentType.player())
+                            .requires(source -> source.hasPermissionLevel(2)) // Admin required for targeting
+                            .executes(context -> {
+                                // Start attack for target player
+                                ServerPlayerEntity targetPlayer = EntityArgumentType.getPlayer(context, "target");
+                                ServerCommandSource source = context.getSource();
+                                
+                                UndertaleNetworking.sendStartAttackToPlayer(targetPlayer);
+                                source.sendFeedback(() -> Text.literal("§6Starting attack interface for " + targetPlayer.getName().getString() + "..."), false);
+                                
+                                // Also notify the target player
+                                targetPlayer.sendMessage(Text.literal("§6An admin started the attack interface for you!"), false);
+                                return 1;
+                            })));
+            
+            // Attack scoreboard commands
+            dispatcher.register(CommandManager.literal("attackstats")
+                    .requires(source -> source.hasPermissionLevel(0)) // Allow all players
+                    .executes(context -> {
+                        ServerCommandSource source = context.getSource();
+                        if (source.getEntity() instanceof ServerPlayerEntity player) {
+                            showPlayerStats(player);
+                            return 1;
+                        }
+                        return 0;
+                    }));
+                    
+            dispatcher.register(CommandManager.literal("attackleaderboard")
+                    .requires(source -> source.hasPermissionLevel(0)) // Allow all players
+                    .executes(context -> {
+                        ServerCommandSource source = context.getSource();
+                        if (source.getEntity() instanceof ServerPlayerEntity player) {
+                            showLeaderboard(player, 10);
+                            return 1;
+                        }
+                        return 0;
+                    }));
+                    
+            dispatcher.register(CommandManager.literal("resetattackstats")
+                    .requires(source -> source.hasPermissionLevel(2)) // Admin only
+                    .executes(context -> {
+                        ServerCommandSource source = context.getSource();
+                        if (source.getEntity() instanceof ServerPlayerEntity player) {
+                            UndertaleScoreboard.resetPlayerScores(player.getUuid());
+                            source.sendFeedback(() -> Text.literal("§aReset attack stats for " + player.getName().getString()), false);
+                            return 1;
+                        }
+                        return 0;
                     }));
         });
+    }
+    
+    private void showPlayerStats(ServerPlayerEntity player) {
+        UndertaleScoreboard.PlayerScores scores = UndertaleScoreboard.getPlayerScores(player.getUuid());
+        
+        if (scores.totalAttacks == 0) {
+            player.sendMessage(Text.literal("§7You haven't made any attacks yet! Use §6/undertaleattack §7to try."), false);
+            return;
+        }
+        
+        player.sendMessage(Text.literal("§6=== YOUR ATTACK STATS ==="), false);
+        player.sendMessage(Text.literal("§7Last Attack: §f" + scores.lastAttackValue + "/100"), false);
+        player.sendMessage(Text.literal("§7Best Attack: §f" + scores.bestAttackValue + "/100 " + getScoreRating(scores.bestAttackValue)), false);
+        player.sendMessage(Text.literal("§7Average: §f" + String.format("%.1f", scores.averageAttackValue) + "/100"), false);
+        player.sendMessage(Text.literal("§7Total Attacks: §f" + scores.totalAttacks), false);
+        player.sendMessage(Text.literal("§7Perfect Attacks: §a" + scores.perfectAttacks + " §7(45-55 range)"), false);
+        
+        if (scores.perfectAttacks > 0) {
+            float perfectRate = (float) scores.perfectAttacks / scores.totalAttacks * 100;
+            player.sendMessage(Text.literal("§7Perfect Rate: §a" + String.format("%.1f", perfectRate) + "%"), false);
+        }
+    }
+    
+    private void showLeaderboard(ServerPlayerEntity requestingPlayer, int limit) {
+        var leaderboard = UndertaleScoreboard.getLeaderboard(limit);
+        
+        if (leaderboard.isEmpty()) {
+            requestingPlayer.sendMessage(Text.literal("§7No attack scores recorded yet!"), false);
+            return;
+        }
+        
+        requestingPlayer.sendMessage(Text.literal("§6=== ATTACK LEADERBOARD ==="), false);
+        
+        int rank = 1;
+        for (var entry : leaderboard) {
+            UUID playerId = entry.getKey();
+            UndertaleScoreboard.PlayerScores scores = entry.getValue();
+            
+            // Try to get player name
+            String playerName = "Unknown Player";
+            ServerPlayerEntity player = requestingPlayer.getServer().getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                playerName = player.getName().getString();
+            }
+            
+            String rankText = getRankText(rank);
+            String scoreRating = getScoreRating(scores.bestAttackValue);
+            
+            requestingPlayer.sendMessage(Text.literal(
+                rankText + " §f" + playerName + 
+                " §7- Best: §f" + scores.bestAttackValue + "/100 " + scoreRating +
+                " §7(Avg: " + String.format("%.1f", scores.averageAttackValue) + ")"
+            ), false);
+            
+            rank++;
+        }
+    }
+    
+    private String getRankText(int rank) {
+        return switch (rank) {
+            case 1 -> "§6👑";
+            case 2 -> "§7🥈";
+            case 3 -> "§c🥉";
+            default -> "§7" + rank + ".";
+        };
+    }
+    
+    private String getScoreRating(int score) {
+        if (score >= 45 && score <= 55) {
+            return "§a✦PERFECT✦";
+        } else if (score >= 30 && score <= 70) {
+            return "§e⚔Good⚔";
+        } else if (score >= 15 && score <= 85) {
+            return "§6◊Okay◊";
+        } else {
+            return "§c✗Miss✗";
+        }
     }
 
     private void registerEvents() {
@@ -350,11 +501,13 @@ public class UndertaleExtinct implements ModInitializer {
         // Save data when server stops
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             saveModData(server);
+            UndertaleScoreboard.saveScores(server);
         });
 
         // Load data when server starts
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             loadModData(server);
+            UndertaleScoreboard.loadScores(server);
         });
 
         // Periodic autosave every 5 minutes
@@ -365,6 +518,7 @@ public class UndertaleExtinct implements ModInitializer {
                 public void run() {
                     if (server.isRunning()) {
                         saveModData(server);
+                        UndertaleScoreboard.saveScores(server);
                     }
                 }
             }, 300000, 300000); // 5 minutes

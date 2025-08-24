@@ -3,7 +3,7 @@
 	"id": "undertaleextinct",
 	"version": "${version}",
 	"name": "UndertaleExtinct",
-	"description": "Mob Extinct feature + Animation",
+	"description": "Mob Extinct feature + Animation + Attacks",
 	"authors": [
 		"Gabrieli2806"
 	],
@@ -16,6 +16,9 @@
 	"entrypoints": {
 		"main": [
 			"com.g2806.undertaleextinct.UndertaleExtinctMod"
+		],
+		"client": [
+			"com.g2806.undertaleextinct.UndertaleExtinctClient"
 		]
 	},
 	"mixins": [

@@ -53,11 +53,14 @@ public class UndertaleAttackOverlay {
     
     // Slider movement state
     private float sliderPosition = 0.0f; // 0.0 = left, 1.0 = right
-    private float sliderSpeed = 0.02f;   // Speed of movement
+    private float sliderSpeed = 0.03f;   // Speed of movement (1.5x faster)
     private boolean sliderMoving = true; // true = still moving, false = stopped
     private boolean sliderFinished = false; // true = reached end or clicked
     private int attackValue = 0; // 0-100 value based on click position
     private boolean showResult = false; // show the result value
+    private boolean isClosing = false; // fade out animation
+    private int fadeOutTicks = 0; // fade animation counter
+    private static final int FADE_OUT_DURATION = 60; // 3 seconds at 20 ticks/sec
     
     // Slash animation state
     private boolean playingSlashAnimation = false;
@@ -83,13 +86,17 @@ public class UndertaleAttackOverlay {
         // Register tick events for slider animation, slash animation, and input checking
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (isActive) {
-                if (sliderTextureLoaded && sliderMoving) {
-                    updateSliderPosition();
+                if (isClosing) {
+                    updateFadeOut();
+                } else {
+                    if (sliderTextureLoaded && sliderMoving) {
+                        updateSliderPosition();
+                    }
+                    if (playingSlashAnimation) {
+                        updateSlashAnimation();
+                    }
+                    checkForClick(client);
                 }
-                if (playingSlashAnimation) {
-                    updateSlashAnimation();
-                }
-                checkForClick(client);
             }
         });
     }
@@ -179,11 +186,23 @@ public class UndertaleAttackOverlay {
                     // No animation, close faster for misses
                     Thread.sleep(1000);
                 }
-                stopAttack();
+                startFadeOut();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }).start();
+    }
+    
+    private void startFadeOut() {
+        isClosing = true;
+        fadeOutTicks = 0;
+    }
+    
+    private void updateFadeOut() {
+        fadeOutTicks++;
+        if (fadeOutTicks >= FADE_OUT_DURATION) {
+            stopAttack();
+        }
     }
     
     private void startSlashAnimation() {
@@ -271,6 +290,13 @@ public class UndertaleAttackOverlay {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
         
+        // Calculate fade alpha
+        float fadeAlpha = 1.0f;
+        if (isClosing) {
+            fadeAlpha = 1.0f - ((float) fadeOutTicks / FADE_OUT_DURATION);
+            fadeAlpha = Math.max(0.0f, Math.min(1.0f, fadeAlpha));
+        }
+        
         // Get screen dimensions
         int screenWidth = client.getWindow().getScaledWidth();
         int screenHeight = client.getWindow().getScaledHeight();
@@ -282,13 +308,6 @@ public class UndertaleAttackOverlay {
         if (texturesLoaded) {
             // Render attack frame texture
             context.drawTexture(ATTACK_FRAME_TEXTURE, frameX, frameY, 0, 0, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH, FRAME_HEIGHT);
-        } else {
-            // Fallback: simple colored rectangle
-            int borderColor = 0xFFFFFFFF; // White border
-            int bgColor = 0x88000000;     // Semi-transparent black background
-            
-            context.fill(frameX - 2, frameY - 2, frameX + FRAME_WIDTH + 2, frameY + FRAME_HEIGHT + 2, borderColor);
-            context.fill(frameX, frameY, frameX + FRAME_WIDTH, frameY + FRAME_HEIGHT, bgColor);
         }
         
         // Render sliding attack meter
@@ -327,15 +346,26 @@ public class UndertaleAttackOverlay {
             textColor = 0xFFFFFFFF; // White (unused)
         }
         
-        // Draw text centered above the frame (only if there's text to show)
+        // Draw text centered above the frame (only if there's text to show) with fade
         if (displayText != null) {
             int textWidth = client.textRenderer.getWidth(displayText);
             int textX = (screenWidth - textWidth) / 2;
             int textY = frameY - 30;
-            context.drawText(client.textRenderer, displayText, textX, textY, textColor, true);
+            
+            // Apply fade alpha to text color
+            int fadeTextColor = applyFadeToColor(textColor, fadeAlpha);
+            context.drawText(client.textRenderer, displayText, textX, textY, fadeTextColor, true);
         }
         
         LOGGER.debug("Rendering attack overlay at position ({}, {})", frameX, frameY);
+    }
+    
+    private int applyFadeToColor(int color, float alpha) {
+        int a = (int) (((color >> 24) & 0xFF) * alpha);
+        int r = (color >> 16) & 0xFF;
+        int g = (color >> 8) & 0xFF;
+        int b = color & 0xFF;
+        return (a << 24) | (r << 16) | (g << 8) | b;
     }
     
     private void renderSlider(DrawContext context, int frameX, int frameY, MinecraftClient client) {
@@ -406,6 +436,15 @@ public class UndertaleAttackOverlay {
      */
     public void stopAttack() {
         isActive = false;
+        isClosing = false;
+        fadeOutTicks = 0;
+        sliderMoving = false;
+        sliderFinished = false;
+        sliderPosition = 0.0f;
+        showResult = false;
+        attackValue = 0;
+        playingSlashAnimation = false;
+        currentSlashFrame = 0;
         LOGGER.info("Attack overlay stopped");
     }
     

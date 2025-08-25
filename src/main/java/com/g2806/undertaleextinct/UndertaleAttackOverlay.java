@@ -36,23 +36,12 @@ public class UndertaleAttackOverlay {
     // Color cycling timing
     private static final long COLOR_CYCLE_DURATION = 100; // 0.1 seconds in milliseconds
     
-    // Slash animation textures (1.png to 5.png)
-    private static final int SLASH_FRAMES = 5;
-    private static final List<Identifier> SLASH_TEXTURES = new ArrayList<>();
-    
-    static {
-        // Initialize slash texture identifiers
-        for (int i = 1; i <= SLASH_FRAMES; i++) {
-            SLASH_TEXTURES.add(new Identifier(MOD_ID, "textures/gui/slash/" + i + ".png"));
-        }
-    }
     
     // Overlay state
     private boolean isActive = false;
     private boolean texturesLoaded = false;
     private boolean sliderTextureLoaded = false;
     private boolean colorSlidersLoaded = false;
-    private boolean slashTexturesLoaded = false;
     
     // Fade-out effect
     private boolean fadingOut = false;
@@ -81,11 +70,6 @@ public class UndertaleAttackOverlay {
     private long colorSequenceStartTime = 0;
     private static final long COLOR_SEQUENCE_TOTAL_DURATION = 300; // 0.3 seconds total (3 colors × 0.1s each)
     
-    // Slash animation state
-    private boolean playingSlashAnimation = false;
-    private int currentSlashFrame = 0;
-    private long lastSlashFrameTime = 0;
-    private static final int SLASH_FRAME_DELAY = 3; // ticks between slash frames (faster animation)
     
     public UndertaleAttackOverlay() {
         registerHudRender();
@@ -107,9 +91,6 @@ public class UndertaleAttackOverlay {
             if (isActive) {
                 if (sliderTextureLoaded && sliderMoving) {
                     updateSliderPosition();
-                }
-                if (playingSlashAnimation) {
-                    updateSlashAnimation();
                 }
                 checkForClick(client);
             }
@@ -148,24 +129,6 @@ public class UndertaleAttackOverlay {
         }
     }
     
-    private void updateSlashAnimation() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.world == null) return;
-        
-        long currentTime = client.world.getTime();
-        
-        if (currentTime - lastSlashFrameTime >= SLASH_FRAME_DELAY) {
-            currentSlashFrame++;
-            lastSlashFrameTime = currentTime;
-            
-            // Stop animation after all frames
-            if (currentSlashFrame >= SLASH_FRAMES) {
-                playingSlashAnimation = false;
-                currentSlashFrame = 0;
-                LOGGER.info("Slash animation completed");
-            }
-        }
-    }
     
     private void calculateAttackValue() {
         calculateAttackValue(false); // Default: not clicked, reached end
@@ -190,26 +153,16 @@ public class UndertaleAttackOverlay {
             startColorSequence();
         }
         
-        // Start slash animation only if attack was successful (score > 0)
-        if (attackValue > 0) {
-            startSlashAnimation();
-        }
         
         showResult = true;
         
         // Send attack value to server for scoreboard
         sendAttackValueToServer(attackValue);
         
-        // Start fade-out after appropriate delay
+        // Start fade-out after delay
         new Thread(() -> {
             try {
-                if (attackValue > 0) {
-                    // Wait for slash animation to complete (5 frames * 3 ticks * 50ms per tick = ~0.75 seconds)
-                    Thread.sleep(1500); // Extra buffer time
-                } else {
-                    // No animation, close faster for misses
-                    Thread.sleep(1000);
-                }
+                Thread.sleep(1000);
                 startFadeOut();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -217,19 +170,6 @@ public class UndertaleAttackOverlay {
         }).start();
     }
     
-    private void startSlashAnimation() {
-        if (!slashTexturesLoaded) return;
-        
-        playingSlashAnimation = true;
-        currentSlashFrame = 0;
-        
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client != null && client.world != null) {
-            lastSlashFrameTime = client.world.getTime();
-        }
-        
-        LOGGER.info("Started slash animation");
-    }
     
     private void startColorSequence() {
         if (!colorSlidersLoaded) {
@@ -342,15 +282,6 @@ public class UndertaleAttackOverlay {
                 }
             }
             
-            // Check slash animation textures
-            slashTexturesLoaded = true;
-            for (int i = 0; i < SLASH_FRAMES; i++) {
-                var slashResource = client.getResourceManager().getResource(SLASH_TEXTURES.get(i));
-                if (slashResource.isEmpty()) {
-                    slashTexturesLoaded = false;
-                    break;
-                }
-            }
             
             if (texturesLoaded) {
                 LOGGER.info("Attack frame texture loaded for overlay: {}", ATTACK_FRAME_TEXTURE);
@@ -370,18 +301,12 @@ public class UndertaleAttackOverlay {
                 LOGGER.info("Some color slider textures missing, using default slider");
             }
             
-            if (slashTexturesLoaded) {
-                LOGGER.info("All {} slash animation textures loaded successfully", SLASH_FRAMES);
-            } else {
-                LOGGER.info("Some slash animation textures missing, animation will be skipped");
-            }
             
         } catch (Exception e) {
             LOGGER.warn("Failed to load attack textures for overlay", e);
             texturesLoaded = false;
             sliderTextureLoaded = false;
             colorSlidersLoaded = false;
-            slashTexturesLoaded = false;
         }
     }
     
@@ -492,10 +417,6 @@ public class UndertaleAttackOverlay {
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         RenderSystem.disableBlend();
         
-        // Render slash animation in center of screen (without fade effect)
-        if (playingSlashAnimation && slashTexturesLoaded) {
-            renderSlashAnimation(context, screenWidth, screenHeight);
-        }
         
         LOGGER.debug("Rendering attack overlay at position ({}, {})", frameX, frameY);
     }
@@ -546,23 +467,6 @@ public class UndertaleAttackOverlay {
         LOGGER.debug("Rendering slider at position ({}, {}) with slider position {}", sliderX, sliderY, sliderPosition);
     }
     
-    private void renderSlashAnimation(DrawContext context, int screenWidth, int screenHeight) {
-        if (currentSlashFrame < 0 || currentSlashFrame >= SLASH_FRAMES) return;
-        
-        // Get current slash texture
-        Identifier currentSlashTexture = SLASH_TEXTURES.get(currentSlashFrame);
-        
-        // Render in center of screen - 2x smaller than original size
-        int slashWidth = 100;  // Half the original size (200 -> 100)
-        int slashHeight = 100; // Half the original size (200 -> 100)
-        int slashX = (screenWidth - slashWidth) / 2;
-        int slashY = (screenHeight - slashHeight) / 2;
-        
-        // Draw the current slash frame
-        context.drawTexture(currentSlashTexture, slashX, slashY, 0, 0, slashWidth, slashHeight, slashWidth, slashHeight);
-        
-        LOGGER.debug("Rendering slash animation frame {} at center ({}, {})", currentSlashFrame + 1, slashX, slashY);
-    }
     
     /**
      * Start showing the attack overlay
@@ -584,13 +488,8 @@ public class UndertaleAttackOverlay {
         playingColorSequence = false;
         colorSequenceStartTime = 0;
         
-        // Reset slash animation state
-        playingSlashAnimation = false;
-        currentSlashFrame = 0;
-        lastSlashFrameTime = 0;
-        
         isActive = true;
-        LOGGER.info("Attack overlay started - slider moves left to right, click to stop and trigger slash animation!");
+        LOGGER.info("Attack overlay started - slider moves left to right, click to stop!");
     }
     
     /**
@@ -613,13 +512,8 @@ public class UndertaleAttackOverlay {
         playingColorSequence = false;
         colorSequenceStartTime = 0;
         
-        // Reset slash animation state
-        playingSlashAnimation = false;
-        currentSlashFrame = 0;
-        lastSlashFrameTime = 0;
-        
         isActive = true;
-        LOGGER.info("Numbered attack overlay {} started - slider moves left to right, click to stop and trigger slash animation!", attackNumber);
+        LOGGER.info("Numbered attack overlay {} started - slider moves left to right, click to stop!", attackNumber);
     }
     
     /**
@@ -632,8 +526,6 @@ public class UndertaleAttackOverlay {
         sliderPosition = 0.0f;
         showResult = false;
         attackValue = 0;
-        playingSlashAnimation = false;
-        currentSlashFrame = 0;
         
         // Reset fade-out state
         fadingOut = false;

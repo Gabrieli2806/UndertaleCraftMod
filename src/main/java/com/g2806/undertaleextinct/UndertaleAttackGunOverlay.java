@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
@@ -26,6 +27,15 @@ public class UndertaleAttackGunOverlay {
     private static final Identifier ATTACK_FRAME_TEXTURE = new Identifier(MOD_ID, "textures/gui/attack_frame.png");
     private static final Identifier ATTACK_SLIDER_TEXTURE = new Identifier(MOD_ID, "textures/gui/attack_slider.png");
     
+    // Color cycling slider textures
+    private static final Identifier RED_SLIDER_TEXTURE = new Identifier(MOD_ID, "textures/gui/red.png");
+    private static final Identifier BLUE_SLIDER_TEXTURE = new Identifier(MOD_ID, "textures/gui/blue.png");
+    private static final Identifier YELLOW_SLIDER_TEXTURE = new Identifier(MOD_ID, "textures/gui/yellow.png");
+    private static final Identifier[] COLOR_SLIDER_TEXTURES = {RED_SLIDER_TEXTURE, BLUE_SLIDER_TEXTURE, YELLOW_SLIDER_TEXTURE};
+    
+    // Color cycling timing
+    private static final long COLOR_CYCLE_DURATION = 100; // 0.1 seconds in milliseconds
+    
     // Slash animation textures (1.png to 5.png)
     private static final int SLASH_FRAMES = 5;
     private static final List<Identifier> SLASH_TEXTURES = new ArrayList<>();
@@ -41,7 +51,19 @@ public class UndertaleAttackGunOverlay {
     private boolean isActive = false;
     private boolean texturesLoaded = false;
     private boolean sliderTextureLoaded = false;
+    private boolean colorSlidersLoaded = false;
     private boolean slashTexturesLoaded = false;
+    
+    // Fade-out effect
+    private boolean fadingOut = false;
+    private long fadeStartTime = 0;
+    private static final long FADE_DURATION = 1000; // 1 second fade out
+    
+    // Color cycling state (only after click) - only one sequence per attack
+    private boolean playingColorSequence = false;
+    private long colorSequenceStartTime = 0;
+    private int colorSequenceSliderIndex = -1; // Which slider index is playing the color sequence
+    private static final long COLOR_SEQUENCE_TOTAL_DURATION = 300; // 0.3 seconds total (3 colors × 0.1s each)
     
     // Frame dimensions (smaller and thicker for better positioning)
     private static final int FRAME_WIDTH = 541;
@@ -103,6 +125,15 @@ public class UndertaleAttackGunOverlay {
     
     private void resetSliders() {
         attackStartTime = System.currentTimeMillis();
+        
+        // Reset color sequence state
+        playingColorSequence = false;
+        colorSequenceStartTime = 0;
+        colorSequenceSliderIndex = -1;
+        
+        // Reset fade-out state
+        fadingOut = false;
+        fadeStartTime = 0;
         
         for (int i = 0; i < NUM_SLIDERS; i++) {
             sliderPositions[i] = 0.0f;
@@ -180,6 +211,10 @@ public class UndertaleAttackGunOverlay {
     
     
     private void calculateSliderValue(int sliderIndex) {
+        calculateSliderValue(sliderIndex, false); // Default: not clicked, reached end
+    }
+    
+    private void calculateSliderValue(int sliderIndex, boolean wasClicked) {
         // Convert slider position (0.0-1.0) to attack value (0-100)
         // Position 50 (middle) = Score 100 (best), Position 0/100 (edges) = Score 0 (worst)
         
@@ -188,6 +223,10 @@ public class UndertaleAttackGunOverlay {
         attackValues[sliderIndex] = Math.round(100 - (distanceFrom50 * 2)); // Linear scoring
         attackValues[sliderIndex] = Math.max(0, Math.min(100, attackValues[sliderIndex])); // Clamp to 0-100
         
+        // Only start color sequence if slider was clicked (not if it reached the end)
+        if (wasClicked) {
+            startColorSequence(sliderIndex);
+        }
     }
     
     
@@ -210,7 +249,7 @@ public class UndertaleAttackGunOverlay {
         // Send gun attack value to server for scoreboard
         sendGunAttackValueToServer(totalAttackValue);
         
-        // Close overlay after appropriate delay
+        // Start fade-out after appropriate delay
         new Thread(() -> {
             try {
                 if (totalAttackValue > 0) {
@@ -220,7 +259,7 @@ public class UndertaleAttackGunOverlay {
                     // No animation, close faster for complete miss
                     Thread.sleep(1000);
                 }
-                stopGunAttack();
+                startFadeOut();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -233,6 +272,70 @@ public class UndertaleAttackGunOverlay {
         playingSlashAnimation = true;
         currentSlashFrame = 0;
         slashAnimationTicks = 0;
+    }
+    
+    private void startColorSequence(int sliderIndex) {
+        if (!colorSlidersLoaded) {
+            LOGGER.debug("Color sliders not loaded, skipping color sequence");
+            return;
+        }
+        
+        // Only start a new sequence if one isn't already playing
+        if (playingColorSequence) {
+            LOGGER.debug("Color sequence already playing, skipping duplicate start");
+            return;
+        }
+        
+        playingColorSequence = true;
+        colorSequenceStartTime = System.currentTimeMillis();
+        colorSequenceSliderIndex = sliderIndex; // Track which slider is showing colors
+        
+        LOGGER.info("Started fast color sequence at slider {} (red→blue→yellow in 0.3s)", sliderIndex);
+    }
+    
+    private void startFadeOut() {
+        fadingOut = true;
+        fadeStartTime = System.currentTimeMillis();
+        
+        // Start a thread to close overlay when fade is complete
+        new Thread(() -> {
+            try {
+                Thread.sleep(FADE_DURATION + 100); // Wait for fade to complete plus buffer
+                stopGunAttack();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }).start();
+    }
+    
+    private float getCurrentAlpha() {
+        if (!fadingOut) {
+            return 1.0f; // Full opacity when not fading
+        }
+        
+        long currentTime = System.currentTimeMillis();
+        long elapsed = currentTime - fadeStartTime;
+        
+        if (elapsed >= FADE_DURATION) {
+            return 0.0f; // Fully transparent when fade is complete
+        }
+        
+        // Linear fade from 1.0 to 0.0 over FADE_DURATION
+        return 1.0f - (float) elapsed / FADE_DURATION;
+    }
+    
+    private int applyAlphaToColor(int color, float alpha) {
+        // Extract ARGB components
+        int a = (color >> 24) & 0xFF;
+        int r = (color >> 16) & 0xFF;
+        int g = (color >> 8) & 0xFF;
+        int b = color & 0xFF;
+        
+        // Apply alpha multiplier
+        int newAlpha = (int) (a * alpha);
+        
+        // Reconstruct color with new alpha
+        return (newAlpha << 24) | (r << 16) | (g << 8) | b;
     }
     
     private void updateSlashAnimation() {
@@ -267,6 +370,16 @@ public class UndertaleAttackGunOverlay {
             texturesLoaded = false;
         }
         
+        // Load color slider textures
+        try {
+            colorSlidersLoaded = true;
+            for (Identifier colorTexture : COLOR_SLIDER_TEXTURES) {
+                client.getResourceManager().getResource(colorTexture);
+            }
+        } catch (Exception e) {
+            colorSlidersLoaded = false;
+        }
+        
         // Load slash animation textures
         int loadedSlashTextures = 0;
         for (Identifier slashTexture : SLASH_TEXTURES) {
@@ -280,6 +393,47 @@ public class UndertaleAttackGunOverlay {
         if (loadedSlashTextures == SLASH_FRAMES) {
             slashTexturesLoaded = true;
         }
+    }
+    
+    /**
+     * Get the current slider texture for a specific slider index
+     */
+    private Identifier getCurrentSliderTexture(int sliderIndex) {
+        // If slider is not spawned, don't render
+        if (!sliderSpawned[sliderIndex]) {
+            return null;
+        }
+        
+        // If slider is finished (either clicked or reached end), check what to show
+        if (sliderFinished[sliderIndex]) {
+            // Only show color sequence on the slider that was clicked
+            if (playingColorSequence && sliderIndex == colorSequenceSliderIndex) {
+                // If color sliders not loaded, fallback to hiding slider
+                if (!colorSlidersLoaded) {
+                    return null; // Hide slider
+                }
+                
+                long currentTime = System.currentTimeMillis();
+                long elapsed = currentTime - colorSequenceStartTime;
+                
+                // If sequence is complete, hide slider immediately
+                if (elapsed >= COLOR_SEQUENCE_TOTAL_DURATION) {
+                    playingColorSequence = false; // Stop sequence
+                    colorSequenceSliderIndex = -1; // Reset slider index
+                    return null; // Hide slider instantly
+                }
+                
+                // Cycle through colors every 0.1 seconds
+                int colorIndex = (int) (elapsed / COLOR_CYCLE_DURATION) % COLOR_SLIDER_TEXTURES.length;
+                return COLOR_SLIDER_TEXTURES[colorIndex];
+            } else {
+                // If not the clicked slider or no color sequence, hide slider immediately
+                return null;
+            }
+        }
+        
+        // If slider is still moving, show normal slider
+        return sliderTextureLoaded ? ATTACK_SLIDER_TEXTURE : ATTACK_SLIDER_TEXTURE;
     }
     
     public void startGunAttack() {
@@ -329,7 +483,7 @@ public class UndertaleAttackGunOverlay {
         if (sliderSpawned[nextClickTarget] && sliderMoving[nextClickTarget] && !sliderFinished[nextClickTarget]) {
             sliderMoving[nextClickTarget] = false;
             sliderFinished[nextClickTarget] = true;
-            calculateSliderValue(nextClickTarget);
+            calculateSliderValue(nextClickTarget, true); // Clicked by user
             
             // Move to next slider for next click
             nextClickTarget++;
@@ -387,6 +541,17 @@ public class UndertaleAttackGunOverlay {
         int screenWidth = client.getWindow().getScaledWidth();
         int screenHeight = client.getWindow().getScaledHeight();
         
+        // Get current alpha for fade effect
+        float alpha = getCurrentAlpha();
+        
+        if (alpha <= 0.0f) {
+            return; // Don't render if fully transparent
+        }
+        
+        // Apply alpha blending
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+        
         // Render attack frames (4 frames vertically stacked)
         renderGunAttackFrames(context, screenWidth, screenHeight);
         
@@ -395,10 +560,14 @@ public class UndertaleAttackGunOverlay {
         
         // Show result if finished
         if (showResult) {
-            renderResult(context, screenWidth, screenHeight);
+            renderResult(context, screenWidth, screenHeight, alpha);
         }
         
-        // Render slash animation if playing
+        // Reset shader color and disable blending
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        RenderSystem.disableBlend();
+        
+        // Render slash animation if playing (without fade effect)
         if (playingSlashAnimation) {
             renderSlashAnimation(context, screenWidth, screenHeight);
         }
@@ -415,44 +584,49 @@ public class UndertaleAttackGunOverlay {
     }
     
     private void renderSliders(DrawContext context, int screenWidth, int screenHeight) {
-        if (!sliderTextureLoaded) return;
+        if (!sliderTextureLoaded && !colorSlidersLoaded) return;
         
         int frameX = (screenWidth - FRAME_WIDTH) / 2;
         int frameY = screenHeight - FRAME_HEIGHT - 80;
         
         for (int i = 0; i < NUM_SLIDERS; i++) {
-            // Only render sliders that have spawned
-            if (!sliderSpawned[i]) continue;
+            // Get the current slider texture for this specific slider (normal, color sequence, or null)
+            Identifier currentSliderTexture = getCurrentSliderTexture(i);
+            
+            // If null, slider should be hidden (finished or not spawned)
+            if (currentSliderTexture == null) {
+                continue; // Skip rendering this slider
+            }
             
             // Calculate slider position within the frame (same as regular attack slider)
             int sliderX = frameX + (int)(sliderPositions[i] * (FRAME_WIDTH - SLIDER_WIDTH));
             int sliderY = frameY + (FRAME_HEIGHT - SLIDER_HEIGHT) / 2; // All sliders at same position
             
-            // Draw slider using attack_slider.png texture
-            context.drawTexture(ATTACK_SLIDER_TEXTURE, sliderX, sliderY, 0, 0, SLIDER_WIDTH, SLIDER_HEIGHT, SLIDER_WIDTH, SLIDER_HEIGHT);
+            // Draw slider using normal or color cycling texture
+            context.drawTexture(currentSliderTexture, sliderX, sliderY, 0, 0, SLIDER_WIDTH, SLIDER_HEIGHT, SLIDER_WIDTH, SLIDER_HEIGHT);
         }
     }
     
-    private void renderResult(DrawContext context, int screenWidth, int screenHeight) {
+    private void renderResult(DrawContext context, int screenWidth, int screenHeight, float alpha) {
         // Show the gun attack result value with color coding
         String displayText;
         int textColor;
         
         if (totalAttackValue >= 360) { // 90% of 400 max
             displayText = "PERFECT! (" + totalAttackValue + "/400)";
-            textColor = 0xFF00FF00; // Green
+            textColor = applyAlphaToColor(0xFF00FF00, alpha); // Green
         } else if (totalAttackValue >= 280) { // 70% of 400 max
             displayText = "Great! (" + totalAttackValue + "/400)";
-            textColor = 0xFF80FF80; // Light Green
+            textColor = applyAlphaToColor(0xFF80FF80, alpha); // Light Green
         } else if (totalAttackValue >= 200) { // 50% of 400 max
             displayText = "Good! (" + totalAttackValue + "/400)";
-            textColor = 0xFFFFFF00; // Yellow
+            textColor = applyAlphaToColor(0xFFFFFF00, alpha); // Yellow
         } else if (totalAttackValue >= 100) { // 25% of 400 max
             displayText = "Okay (" + totalAttackValue + "/400)";
-            textColor = 0xFFFF8800; // Orange
+            textColor = applyAlphaToColor(0xFFFF8800, alpha); // Orange
         } else {
             displayText = "Miss... (" + totalAttackValue + "/400)";
-            textColor = 0xFFFF0000; // Red
+            textColor = applyAlphaToColor(0xFFFF0000, alpha); // Red
         }
         
         // Show individual slider results
@@ -474,7 +648,8 @@ public class UndertaleAttackGunOverlay {
         // Center the detail text as well
         int detailWidth = MinecraftClient.getInstance().textRenderer.getWidth(detailText.toString());
         int detailX = (screenWidth - detailWidth) / 2;
-        context.drawText(MinecraftClient.getInstance().textRenderer, detailText.toString(), detailX, textY + 12, 0xFFFFFFFF, true);
+        int detailColor = applyAlphaToColor(0xFFFFFFFF, alpha); // White text with alpha
+        context.drawText(MinecraftClient.getInstance().textRenderer, detailText.toString(), detailX, textY + 12, detailColor, true);
     }
     
     private void renderSlashAnimation(DrawContext context, int screenWidth, int screenHeight) {

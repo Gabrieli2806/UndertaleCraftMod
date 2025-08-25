@@ -2,6 +2,7 @@ package com.g2806.undertaleextinct;
 
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.ScoreboardObjective;
 import net.minecraft.scoreboard.ScoreboardCriterion;
@@ -21,9 +22,13 @@ public class UndertaleNetworking {
     // Packet identifiers
     public static final Identifier ATTACK_VALUE_PACKET = new Identifier(MOD_ID, "attack_value");
     public static final Identifier GUN_ATTACK_VALUE_PACKET = new Identifier(MOD_ID, "gun_attack_value");
+    public static final Identifier NUMBERED_ATTACK_VALUE_PACKET = new Identifier(MOD_ID, "numbered_attack_value");
+    public static final Identifier NUMBERED_GUN_ATTACK_VALUE_PACKET = new Identifier(MOD_ID, "numbered_gun_attack_value");
     public static final Identifier START_ANIMATION_PACKET = new Identifier(MOD_ID, "start_animation");
     public static final Identifier START_ATTACK_PACKET = new Identifier(MOD_ID, "start_attack");
     public static final Identifier START_GUN_ATTACK_PACKET = new Identifier(MOD_ID, "start_gun_attack");
+    public static final Identifier START_NUMBERED_ATTACK_PACKET = new Identifier(MOD_ID, "start_numbered_attack");
+    public static final Identifier START_NUMBERED_GUN_ATTACK_PACKET = new Identifier(MOD_ID, "start_numbered_gun_attack");
     
     /**
      * Register server-side packet handlers
@@ -46,6 +51,25 @@ public class UndertaleNetworking {
             // Execute on server thread
             server.execute(() -> {
                 handleGunAttackValueReceived(player, gunAttackValue);
+            });
+        });
+        
+        // Handle numbered attack values
+        ServerPlayNetworking.registerGlobalReceiver(NUMBERED_ATTACK_VALUE_PACKET, (server, player, handler, buf, responseSender) -> {
+            int attackValue = buf.readInt();
+            int attackNumber = buf.readInt();
+            
+            server.execute(() -> {
+                handleNumberedAttackValueReceived(player, attackValue, attackNumber);
+            });
+        });
+        
+        ServerPlayNetworking.registerGlobalReceiver(NUMBERED_GUN_ATTACK_VALUE_PACKET, (server, player, handler, buf, responseSender) -> {
+            int gunAttackValue = buf.readInt();
+            int attackNumber = buf.readInt();
+            
+            server.execute(() -> {
+                handleNumberedGunAttackValueReceived(player, gunAttackValue, attackNumber);
             });
         });
         
@@ -88,6 +112,34 @@ public class UndertaleNetworking {
         }
     }
     
+    /**
+     * Send numbered attack start packet to specific player
+     */
+    public static void sendStartNumberedAttackToPlayer(ServerPlayerEntity targetPlayer, int attackNumber) {
+        try {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeInt(attackNumber);
+            ServerPlayNetworking.send(targetPlayer, START_NUMBERED_ATTACK_PACKET, buf);
+            LOGGER.info("Sent start numbered attack {} packet to player: {}", attackNumber, targetPlayer.getName().getString());
+        } catch (Exception e) {
+            LOGGER.error("Failed to send start numbered attack packet to player: {}", targetPlayer.getName().getString(), e);
+        }
+    }
+    
+    /**
+     * Send numbered gun attack start packet to specific player
+     */
+    public static void sendStartNumberedGunAttackToPlayer(ServerPlayerEntity targetPlayer, int attackNumber) {
+        try {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeInt(attackNumber);
+            ServerPlayNetworking.send(targetPlayer, START_NUMBERED_GUN_ATTACK_PACKET, buf);
+            LOGGER.info("Sent start numbered gun attack {} packet to player: {}", attackNumber, targetPlayer.getName().getString());
+        } catch (Exception e) {
+            LOGGER.error("Failed to send start numbered gun attack packet to player: {}", targetPlayer.getName().getString(), e);
+        }
+    }
+    
     private static void handleAttackValueReceived(ServerPlayerEntity player, int attackValue) {
         // Save to vanilla scoreboard
         saveToVanillaScoreboard(player, attackValue);
@@ -126,12 +178,9 @@ public class UndertaleNetworking {
                 LOGGER.info("Created vanilla scoreboard objective: attack_value");
             }
             
-            // Set the player's score
+            // Set the player's score - only save the value, no additional tracking
             scoreboard.getPlayerScore(player.getName().getString(), objective).setScore(attackValue);
             LOGGER.info("Set vanilla scoreboard score for {}: attack_value = {}", player.getName().getString(), attackValue);
-            
-            // Also create additional objectives for tracking
-            createAdditionalObjectives(player, attackValue, scoreboard);
             
         } catch (Exception e) {
             LOGGER.error("Failed to save attack value to vanilla scoreboard", e);
@@ -208,12 +257,9 @@ public class UndertaleNetworking {
                 LOGGER.info("Created vanilla scoreboard objective: gun_attack_value");
             }
             
-            // Set the player's score
+            // Set the player's score - only save the value, no additional tracking
             scoreboard.getPlayerScore(player.getName().getString(), objective).setScore(gunAttackValue);
             LOGGER.info("Set vanilla scoreboard score for {}: gun_attack_value = {}", player.getName().getString(), gunAttackValue);
-            
-            // Also create additional objectives for gun attacks
-            createGunAdditionalObjectives(player, gunAttackValue, scoreboard);
             
         } catch (Exception e) {
             LOGGER.error("Failed to save gun attack value to vanilla scoreboard for player {}: {}", player.getName().getString(), e.getMessage());
@@ -270,6 +316,82 @@ public class UndertaleNetworking {
             // Increment perfect gun attacks
             int currentPerfect = scoreboard.getPlayerScore(playerName, perfectObj).getScore();
             scoreboard.getPlayerScore(playerName, perfectObj).setScore(currentPerfect + 1);
+        }
+    }
+    
+    private static void handleNumberedAttackValueReceived(ServerPlayerEntity player, int attackValue, int attackNumber) {
+        // Save to numbered vanilla scoreboard
+        saveNumberedAttackToVanillaScoreboard(player, attackValue, attackNumber);
+        
+        // Send feedback to player about their score
+        String message = getAttackMessage(attackValue) + " [Attack " + attackNumber + "]";
+        player.sendMessage(Text.literal(message), false);
+        
+        LOGGER.info("Player {} achieved numbered attack {} value: {} - Saved to vanilla scoreboard", 
+            player.getName().getString(), attackNumber, attackValue);
+    }
+    
+    private static void handleNumberedGunAttackValueReceived(ServerPlayerEntity player, int gunAttackValue, int attackNumber) {
+        // Save to numbered vanilla scoreboard
+        saveNumberedGunAttackToVanillaScoreboard(player, gunAttackValue, attackNumber);
+        
+        // Send feedback to player about their score
+        String message = getGunAttackMessage(gunAttackValue) + " [Gun Attack " + attackNumber + "]";
+        player.sendMessage(Text.literal(message), false);
+        
+        LOGGER.info("Player {} achieved numbered gun attack {} value: {} - Saved to vanilla scoreboard", 
+            player.getName().getString(), attackNumber, gunAttackValue);
+    }
+    
+    private static void saveNumberedAttackToVanillaScoreboard(ServerPlayerEntity player, int attackValue, int attackNumber) {
+        try {
+            Scoreboard scoreboard = player.getServer().getScoreboard();
+            
+            // Create or get the numbered attack objective (attack1, attack2, etc.)
+            String objectiveName = "attack" + attackNumber;
+            ScoreboardObjective objective = scoreboard.getNullableObjective(objectiveName);
+            if (objective == null) {
+                objective = scoreboard.addObjective(
+                    objectiveName, 
+                    ScoreboardCriterion.DUMMY, 
+                    Text.literal("Attack " + attackNumber), 
+                    ScoreboardCriterion.RenderType.INTEGER
+                );
+                LOGGER.info("Created vanilla scoreboard objective: {}", objectiveName);
+            }
+            
+            // Set the player's score - only save the value
+            scoreboard.getPlayerScore(player.getName().getString(), objective).setScore(attackValue);
+            LOGGER.info("Set vanilla scoreboard score for {}: {} = {}", player.getName().getString(), objectiveName, attackValue);
+            
+        } catch (Exception e) {
+            LOGGER.error("Failed to save numbered attack value to vanilla scoreboard", e);
+        }
+    }
+    
+    private static void saveNumberedGunAttackToVanillaScoreboard(ServerPlayerEntity player, int gunAttackValue, int attackNumber) {
+        try {
+            Scoreboard scoreboard = player.getServer().getScoreboard();
+            
+            // Create or get the numbered gun attack objective (gunattack1, gunattack2, etc.)
+            String objectiveName = "gunattack" + attackNumber;
+            ScoreboardObjective objective = scoreboard.getNullableObjective(objectiveName);
+            if (objective == null) {
+                objective = scoreboard.addObjective(
+                    objectiveName, 
+                    ScoreboardCriterion.DUMMY, 
+                    Text.literal("Gun Attack " + attackNumber), 
+                    ScoreboardCriterion.RenderType.INTEGER
+                );
+                LOGGER.info("Created vanilla scoreboard objective: {}", objectiveName);
+            }
+            
+            // Set the player's score - only save the value
+            scoreboard.getPlayerScore(player.getName().getString(), objective).setScore(gunAttackValue);
+            LOGGER.info("Set vanilla scoreboard score for {}: {} = {}", player.getName().getString(), objectiveName, gunAttackValue);
+            
+        } catch (Exception e) {
+            LOGGER.error("Failed to save numbered gun attack value to vanilla scoreboard", e);
         }
     }
     

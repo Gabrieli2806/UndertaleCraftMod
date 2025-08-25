@@ -301,6 +301,65 @@ public class UndertaleExtinct implements ModInitializer {
                                 return 1;
                             })));
             
+            // Numbered attack commands (1-20) - each saves to separate scoreboard
+            for (int i = 1; i <= 20; i++) {
+                final int attackNumber = i; // Final for lambda
+                
+                // undertaleattack1 to undertaleattack20
+                dispatcher.register(CommandManager.literal("undertaleattack" + i)
+                        .executes(context -> {
+                            // Start numbered attack for command sender (self)
+                            ServerCommandSource source = context.getSource();
+                            if (source.getEntity() instanceof ServerPlayerEntity player) {
+                                UndertaleNetworking.sendStartNumberedAttackToPlayer(player, attackNumber);
+                                source.sendFeedback(() -> Text.literal("§6Starting attack interface " + attackNumber + "..."), false);
+                                return 1;
+                            }
+                            return 0;
+                        })
+                        .then(CommandManager.argument("target", EntityArgumentType.player())
+                                .requires(source -> source.hasPermissionLevel(2)) // Admin required for targeting
+                                .executes(context -> {
+                                    // Start numbered attack for target player
+                                    ServerPlayerEntity targetPlayer = EntityArgumentType.getPlayer(context, "target");
+                                    ServerCommandSource source = context.getSource();
+                                    
+                                    UndertaleNetworking.sendStartNumberedAttackToPlayer(targetPlayer, attackNumber);
+                                    source.sendFeedback(() -> Text.literal("§6Starting attack interface " + attackNumber + " for " + targetPlayer.getName().getString() + "..."), false);
+                                    
+                                    // Also notify the target player
+                                    targetPlayer.sendMessage(Text.literal("§6An admin started attack interface " + attackNumber + " for you!"), false);
+                                    return 1;
+                                })));
+                
+                // undertaleattackgun1 to undertaleattackgun20
+                dispatcher.register(CommandManager.literal("undertaleattackgun" + i)
+                        .executes(context -> {
+                            // Start numbered gun attack for command sender (self)
+                            ServerCommandSource source = context.getSource();
+                            if (source.getEntity() instanceof ServerPlayerEntity player) {
+                                UndertaleNetworking.sendStartNumberedGunAttackToPlayer(player, attackNumber);
+                                source.sendFeedback(() -> Text.literal("§6Starting gun attack interface " + attackNumber + "..."), false);
+                                return 1;
+                            }
+                            return 0;
+                        })
+                        .then(CommandManager.argument("target", EntityArgumentType.player())
+                                .requires(source -> source.hasPermissionLevel(2)) // Admin required for targeting
+                                .executes(context -> {
+                                    // Start numbered gun attack for target player
+                                    ServerPlayerEntity targetPlayer = EntityArgumentType.getPlayer(context, "target");
+                                    ServerCommandSource source = context.getSource();
+                                    
+                                    UndertaleNetworking.sendStartNumberedGunAttackToPlayer(targetPlayer, attackNumber);
+                                    source.sendFeedback(() -> Text.literal("§6Starting gun attack interface " + attackNumber + " for " + targetPlayer.getName().getString() + "..."), false);
+                                    
+                                    // Also notify the target player
+                                    targetPlayer.sendMessage(Text.literal("§6An admin started gun attack interface " + attackNumber + " for you!"), false);
+                                    return 1;
+                                })));
+            }
+            
             // Attack scoreboard commands
             dispatcher.register(CommandManager.literal("attackstats")
                     .requires(source -> source.hasPermissionLevel(0)) // Allow all players

@@ -67,6 +67,27 @@ public class UndertaleExtinctClient implements ClientModInitializer {
             });
         });
         
+        // Handle numbered attack start packets
+        ClientPlayNetworking.registerGlobalReceiver(UndertaleNetworking.START_NUMBERED_ATTACK_PACKET, (client, handler, buf, responseSender) -> {
+            int attackNumber = buf.readInt();
+            client.execute(() -> {
+                if (attackOverlay != null) {
+                    attackOverlay.startNumberedAttack(attackNumber);
+                    LOGGER.info("Started numbered attack overlay {} from server command", attackNumber);
+                }
+            });
+        });
+        
+        ClientPlayNetworking.registerGlobalReceiver(UndertaleNetworking.START_NUMBERED_GUN_ATTACK_PACKET, (client, handler, buf, responseSender) -> {
+            int attackNumber = buf.readInt();
+            client.execute(() -> {
+                if (gunAttackOverlay != null) {
+                    gunAttackOverlay.startNumberedGunAttack(attackNumber);
+                    LOGGER.info("Started numbered gun attack overlay {} from server command", attackNumber);
+                }
+            });
+        });
+        
         LOGGER.info("Registered client-side packet handlers for targeted commands");
     }
     

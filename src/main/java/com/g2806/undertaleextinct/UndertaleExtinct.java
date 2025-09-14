@@ -404,7 +404,32 @@ public class UndertaleExtinct implements ModInitializer {
                             .executes(context -> {
                                 ServerCommandSource source = context.getSource();
                                 isOverworldSaved = false;
-                                source.sendFeedback(() -> Text.literal("§cOverworld saved mode reset! All creatures return to normal."), false);
+
+                                // Kill all sniffers in the overworld
+                                if (source.getEntity() instanceof ServerPlayerEntity player) {
+                                    MinecraftServer server = player.getServer();
+                                    if (server != null) {
+                                        int killedSniffers = 0;
+                                        for (ServerWorld serverWorld : server.getWorlds()) {
+                                            if (serverWorld.getRegistryKey() == World.OVERWORLD) {
+                                                for (var entity : serverWorld.iterateEntities()) {
+                                                    if (entity instanceof SnifferEntity sniffer) {
+                                                        sniffer.damage(serverWorld.getDamageSources().genericKill(), Float.MAX_VALUE);
+                                                        killedSniffers++;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        final int finalKilledSniffers = killedSniffers;
+                                        if (killedSniffers > 0) {
+                                            source.sendFeedback(() -> Text.literal("§cOverworld saved mode reset! " + finalKilledSniffers + " sniffers removed."), false);
+                                        } else {
+                                            source.sendFeedback(() -> Text.literal("§cOverworld saved mode reset! All creatures return to normal."), false);
+                                        }
+                                    }
+                                } else {
+                                    source.sendFeedback(() -> Text.literal("§cOverworld saved mode reset! All creatures return to normal."), false);
+                                }
                                 return 1;
                             }))
                     .then(CommandManager.literal("resetnether")
@@ -412,7 +437,32 @@ public class UndertaleExtinct implements ModInitializer {
                             .executes(context -> {
                                 ServerCommandSource source = context.getSource();
                                 isNetherSaved = false;
-                                source.sendFeedback(() -> Text.literal("§cNether saved mode reset! Nether creatures return to nether."), false);
+
+                                // Kill all nether mobs in the overworld
+                                if (source.getEntity() instanceof ServerPlayerEntity player) {
+                                    MinecraftServer server = player.getServer();
+                                    if (server != null) {
+                                        int killedNetherMobs = 0;
+                                        for (ServerWorld serverWorld : server.getWorlds()) {
+                                            if (serverWorld.getRegistryKey() == World.OVERWORLD) {
+                                                for (var entity : serverWorld.iterateEntities()) {
+                                                    if (entity instanceof MobEntity mobEntity && isNetherMob(mobEntity.getType())) {
+                                                        mobEntity.damage(serverWorld.getDamageSources().genericKill(), Float.MAX_VALUE);
+                                                        killedNetherMobs++;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        final int finalKilledNetherMobs = killedNetherMobs;
+                                        if (killedNetherMobs > 0) {
+                                            source.sendFeedback(() -> Text.literal("§cNether saved mode reset! " + finalKilledNetherMobs + " nether creatures removed from overworld."), false);
+                                        } else {
+                                            source.sendFeedback(() -> Text.literal("§cNether saved mode reset! Nether creatures return to nether."), false);
+                                        }
+                                    }
+                                } else {
+                                    source.sendFeedback(() -> Text.literal("§cNether saved mode reset! Nether creatures return to nether."), false);
+                                }
                                 return 1;
                             }))
                     .then(CommandManager.literal("resetend")
@@ -420,7 +470,32 @@ public class UndertaleExtinct implements ModInitializer {
                             .executes(context -> {
                                 ServerCommandSource source = context.getSource();
                                 isEndSaved = false;
-                                source.sendFeedback(() -> Text.literal("§cEnd saved mode reset! Dragons return to normal."), false);
+
+                                // Kill all enderdragons in the end
+                                if (source.getEntity() instanceof ServerPlayerEntity player) {
+                                    MinecraftServer server = player.getServer();
+                                    if (server != null) {
+                                        int killedDragons = 0;
+                                        for (ServerWorld serverWorld : server.getWorlds()) {
+                                            if (serverWorld.getRegistryKey() == World.END) {
+                                                for (var entity : serverWorld.iterateEntities()) {
+                                                    if (entity instanceof EnderDragonEntity dragon) {
+                                                        dragon.damage(serverWorld.getDamageSources().genericKill(), Float.MAX_VALUE);
+                                                        killedDragons++;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        final int finalKilledDragons = killedDragons;
+                                        if (killedDragons > 0) {
+                                            source.sendFeedback(() -> Text.literal("§cEnd saved mode reset! " + finalKilledDragons + " dragons killed."), false);
+                                        } else {
+                                            source.sendFeedback(() -> Text.literal("§cEnd saved mode reset! Dragons return to normal."), false);
+                                        }
+                                    }
+                                } else {
+                                    source.sendFeedback(() -> Text.literal("§cEnd saved mode reset! Dragons return to normal."), false);
+                                }
                                 return 1;
                             })));
 
@@ -866,11 +941,16 @@ public class UndertaleExtinct implements ModInitializer {
                     spawnSniffersNaturally(world);
                 }
 
+                // Handle natural pillager spawning every 400 ticks (20 seconds) when overworld is saved
+                if (isOverworldSaved && world.getRegistryKey() == World.OVERWORLD && world.getTime() % 400 == 0) {
+                    spawnPillagersNaturally(world);
+                }
+
 
                 // Timer-based pillager spawning removed - now handled via percentage-based spawning when villagers spawn
 
-                // Handle peaceful enderdragon spawning in the end every 800 ticks (40 seconds)
-                if (isEndSaved && world.getRegistryKey() == World.END && world.getTime() % 800 == 0) {
+                // Handle peaceful enderdragon spawning in the end every 200 ticks (10 seconds)
+                if (isEndSaved && world.getRegistryKey() == World.END && world.getTime() % 200 == 0) {
                     spawnPeacefulEnderdragons(world);
                 }
             } catch (Exception e) {
@@ -934,10 +1014,12 @@ public class UndertaleExtinct implements ModInitializer {
                 }
             } else if (isInOverworld) {
                 // In overworld: Allow nether creatures but with modifications
-                // Exclude zombie variants as requested
-                if (entityType == EntityType.ZOMBIFIED_PIGLIN) {
+                // Exclude zombie variants, zoglins, and striders
+                if (entityType == EntityType.ZOMBIFIED_PIGLIN ||
+                    entityType == EntityType.ZOGLIN ||
+                    entityType == EntityType.STRIDER) {
                     mobEntity.discard();
-                    LOGGER.debug("Removed zombie nether creature from overworld: {}", mobId);
+                    LOGGER.debug("Removed restricted nether creature from overworld: {}", mobId);
                     return;
                 }
 
@@ -1068,8 +1150,6 @@ public class UndertaleExtinct implements ModInitializer {
         }
 
         // Add peaceful status effects - make them completely non-threatening
-        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 2, true, false)); // Very slow
-        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 1200, 10, true, false)); // Extremely weak attacks
         mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 1200, 2, true, false)); // Take less damage to encourage peaceful behavior
 
         // Add "spared" tag and add to peaceful team if AI changes aren't sufficient
@@ -1078,20 +1158,8 @@ public class UndertaleExtinct implements ModInitializer {
             addMobToTeam(mobEntity, world);
         }
 
-        // Special handling for specific mob types - keep AI but make them peaceful
-        if (entityType == EntityType.CREEPER) {
-            // Make creepers unable to explode with extreme weakness but keep AI for movement
-            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 1200, 10, true, false));
-        } else if (entityType == EntityType.ENDERMAN) {
-            // Make endermen peaceful but keep their AI for teleporting around
-            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 1, true, false));
-        } else if (entityType == EntityType.SPIDER || entityType == EntityType.CAVE_SPIDER) {
-            // Make spiders peaceful but keep their climbing abilities
-            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 1, true, false));
-        } else if (entityType == EntityType.WITCH) {
-            // Make witches peaceful but keep their AI for movement
-            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 1, true, false));
-        } else if (isIllagerMob(entityType)) {
+        // Special handling for specific mob types - keep AI and make them peaceful
+        if (isIllagerMob(entityType)) {
             // Apply regeneration to illagers to represent their "redemption" but keep AI
             mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 100, 0, true, false));
         }
@@ -1147,8 +1215,14 @@ public class UndertaleExtinct implements ModInitializer {
                     applyNetherSavedEffects(mobEntity);
                 }
             } else {
-                // Apply effects to nether creatures in overworld
-                applyNetherSavedEffects(mobEntity);
+                // In overworld: Remove restricted nether creatures (zoglins, striders)
+                if (entityType == EntityType.ZOGLIN || entityType == EntityType.STRIDER) {
+                    mobEntity.discard();
+                    LOGGER.info("Removed existing restricted nether creature from overworld: {}", Registries.ENTITY_TYPE.getId(entityType));
+                } else {
+                    // Apply effects to allowed nether creatures in overworld
+                    applyNetherSavedEffects(mobEntity);
+                }
             }
         }
     }
@@ -1235,9 +1309,9 @@ public class UndertaleExtinct implements ModInitializer {
         BlockPos spawnPos = findSuitableSpawnPos(world, new BlockPos(spawnX, player.getBlockY(), spawnZ));
         if (spawnPos == null) return;
 
-        // Select a random nether mob type (excluding blazes, wither skeletons, magma cubes, zombie piglins, and zoglins)
+        // Select a random nether mob type for overworld spawning (no striders - they need lava)
         EntityType<?>[] netherMobTypes = {
-            EntityType.GHAST, EntityType.STRIDER, EntityType.HOGLIN,
+            EntityType.GHAST, EntityType.HOGLIN,
             EntityType.PIGLIN, EntityType.PIGLIN_BRUTE
         };
 
@@ -1358,9 +1432,9 @@ public class UndertaleExtinct implements ModInitializer {
         BlockPos spawnPos = findSuitableSpawnPos(world, new BlockPos(spawnX, location.getY(), spawnZ));
         if (spawnPos == null) return;
 
-        // Select a random nether mob type (excluding blazes, wither skeletons, magma cubes, zombie piglins, and zoglins)
+        // Select a random nether mob type for overworld spawning (no striders - they need lava)
         EntityType<?>[] netherMobTypes = {
-            EntityType.GHAST, EntityType.STRIDER, EntityType.HOGLIN,
+            EntityType.GHAST, EntityType.HOGLIN,
             EntityType.PIGLIN, EntityType.PIGLIN_BRUTE
         };
 
@@ -1496,20 +1570,49 @@ public class UndertaleExtinct implements ModInitializer {
         }
     }
 
+    private void spawnPillagersNaturally(net.minecraft.world.World world) {
+        if (world instanceof ServerWorld serverWorld) {
+            try {
+                // Get all players in the world
+                var players = serverWorld.getPlayers();
+                if (players.isEmpty()) return;
+
+                // Limit pillager spawning - only spawn if there are fewer than 15 pillagers in the world
+                long pillagerCount = 0;
+                for (var entity : serverWorld.iterateEntities()) {
+                    if (entity instanceof PillagerEntity) {
+                        pillagerCount++;
+                    }
+                }
+                if (pillagerCount >= 15) return;
+
+                // 40% chance to spawn a pillager
+                if (serverWorld.getRandom().nextFloat() > 0.40f) return;
+
+                // Spawn peaceful pillager around a random player
+                var player = players.get(serverWorld.getRandom().nextInt(players.size()));
+                spawnPeacefulPillagerNearPlayer(serverWorld, player);
+
+            } catch (Exception e) {
+                LOGGER.debug("Failed to spawn natural pillagers: {}", e.getMessage());
+            }
+        }
+    }
+
     private void spawnPeacefulEnderdragons(net.minecraft.world.World world) {
         if (world instanceof ServerWorld serverWorld) {
             try {
-                // Limit enderdragon spawning - only spawn if there are fewer than 3 dragons in the end
+                // Limit enderdragon spawning - only spawn if there are fewer than 8 dragons in the end
                 long dragonCount = 0;
                 for (var entity : serverWorld.iterateEntities()) {
                     if (entity instanceof EnderDragonEntity) {
                         dragonCount++;
                     }
                 }
-                if (dragonCount >= 3) return;
+                if (dragonCount >= 8) return;
 
-                // 30% chance to spawn a dragon
-                if (serverWorld.getRandom().nextFloat() > 0.30f) return;
+                // 85% chance to spawn a dragon (much higher rate)
+                if (serverWorld.getRandom().nextFloat() > 0.85f) return;
 
                 spawnPeacefulEnderdragon(serverWorld);
 

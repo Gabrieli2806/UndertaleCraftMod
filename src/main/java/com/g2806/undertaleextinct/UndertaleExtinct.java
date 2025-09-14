@@ -777,8 +777,8 @@ public class UndertaleExtinct implements ModInitializer {
                     handleNetherSavedSpawning(mobEntity, world);
 
                     // Percentage-based nether mob spawning in overworld
-                    if (world.getRegistryKey() == World.OVERWORLD && !isNetherMob(mobEntity.getType())) {
-                        // 25% chance to spawn a nether mob when any overworld mob spawns
+                    if (world.getRegistryKey() == World.OVERWORLD && !isNetherMob(mobEntity.getType()) && !isAquaticMob(mobEntity.getType())) {
+                        // 25% chance to spawn a nether mob when any NON-AQUATIC overworld mob spawns
                         if (world instanceof ServerWorld) {
                             ServerWorld serverWorld = (ServerWorld) world;
                             if (serverWorld.getRandom().nextFloat() < 0.25f) {
@@ -798,7 +798,9 @@ public class UndertaleExtinct implements ModInitializer {
                     if (!mobEntity.getCommandTags().contains("nether_saved_spawn")) {
                         // Immediate removal - no delay whatsoever
                         mobEntity.discard();
-                        LOGGER.debug("Instantly removed extinct mob: {}", mobId);
+                        LOGGER.info("Instantly removed extinct mob: {} at {} in {}", mobId, mobEntity.getBlockPos(), world.getRegistryKey().getValue());
+                    } else {
+                        LOGGER.info("Protected nether saved mob from extinction: {} at {} in {}", mobId, mobEntity.getBlockPos(), world.getRegistryKey().getValue());
                     }
                 }
             }
@@ -819,8 +821,10 @@ public class UndertaleExtinct implements ModInitializer {
                                 // Don't remove mobs that were spawned as part of nether saved system
                                 if (!mobEntity.getCommandTags().contains("nether_saved_spawn")) {
                                     mobEntity.discard();
-                                    LOGGER.debug("Tick-removed extinct mob: {}", mobId);
+                                    LOGGER.info("Tick-removed extinct mob: {} at {} in {}", mobId, mobEntity.getBlockPos(), world.getRegistryKey().getValue());
                                     return;
+                                } else {
+                                    LOGGER.debug("Protected nether saved mob from tick removal: {} at {}", mobId, mobEntity.getBlockPos());
                                 }
                             }
 
@@ -901,11 +905,21 @@ public class UndertaleExtinct implements ModInitializer {
 
         if (isNetherCreature) {
             if (isInNether) {
-                // In nether: Only allow skeletons and endermen, block everything else
-                if (!(entityType == EntityType.SKELETON || entityType == EntityType.ENDERMAN)) {
+                // In nether: Allow skeletons, endermen, piglins, piglin brutes, hoglins and striders to spawn naturally
+                // Block dangerous mobs like blazes, magma cubes, wither skeletons, ghasts
+                if (entityType == EntityType.BLAZE ||
+                    entityType == EntityType.MAGMA_CUBE ||
+                    entityType == EntityType.WITHER_SKELETON ||
+                    entityType == EntityType.GHAST ||
+                    entityType == EntityType.ZOMBIFIED_PIGLIN ||
+                    entityType == EntityType.ZOGLIN) {
                     mobEntity.discard();
-                    LOGGER.debug("Removed nether creature from nether (nether saved mode): {}", mobId);
+                    LOGGER.debug("Removed dangerous nether creature from nether (nether saved mode): {}", mobId);
                     return;
+                } else {
+                    // Apply nether saved effects to allowed creatures and protect them from extinction system
+                    mobEntity.addCommandTag("nether_saved_spawn"); // Protect from extinction system
+                    applyNetherSavedEffects(mobEntity);
                 }
             } else if (isInOverworld) {
                 // In overworld: Allow nether creatures but with modifications
@@ -935,9 +949,25 @@ public class UndertaleExtinct implements ModInitializer {
                entityType == EntityType.ZOGLIN;
     }
 
+    private boolean isAquaticMob(EntityType<?> entityType) {
+        return entityType == EntityType.COD ||
+               entityType == EntityType.SALMON ||
+               entityType == EntityType.TROPICAL_FISH ||
+               entityType == EntityType.PUFFERFISH ||
+               entityType == EntityType.SQUID ||
+               entityType == EntityType.GLOW_SQUID ||
+               entityType == EntityType.DOLPHIN ||
+               entityType == EntityType.TURTLE ||
+               entityType == EntityType.AXOLOTL ||
+               entityType == EntityType.TADPOLE ||
+               entityType == EntityType.FROG;
+    }
+
     private void applyNetherSavedEffects(MobEntity mobEntity) {
         // Make all nether mobs neutral (non-aggressive)
         mobEntity.setAiDisabled(false);
+        mobEntity.setTarget(null);  // Remove any current targets
+        mobEntity.setAttacker(null); // Remove attacker memory
 
         // Apply infinite regeneration to piglins and zoglins
         EntityType<?> entityType = mobEntity.getType();
@@ -947,12 +977,16 @@ public class UndertaleExtinct implements ModInitializer {
             // Apply infinite regeneration effect
             mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, Integer.MAX_VALUE, 0, true, false));
 
-            // Make piglins immune to zombification
+            // Make piglins immune to zombification and make their weapons deal no damage
             if (mobEntity instanceof PiglinEntity piglin) {
                 piglin.setImmuneToZombification(true);
+                // Don't remove weapons, but make them deal no damage
+                mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, Integer.MAX_VALUE, 10, true, false));
             }
             if (mobEntity instanceof PiglinBruteEntity piglinBrute) {
                 piglinBrute.setImmuneToZombification(true);
+                // Don't remove weapons, but make them deal no damage
+                mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, Integer.MAX_VALUE, 10, true, false));
             }
         }
 
@@ -964,7 +998,10 @@ public class UndertaleExtinct implements ModInitializer {
             mobEntity.setAiDisabled(false);
         }
 
-        LOGGER.debug("Applied nether saved effects to: {}", Registries.ENTITY_TYPE.getId(entityType));
+        LOGGER.info("Applied nether saved effects to: {} at {} in {}",
+            Registries.ENTITY_TYPE.getId(entityType),
+            mobEntity.getBlockPos(),
+            mobEntity.getWorld().getRegistryKey().getValue());
     }
 
     private void handleOverworldSavedSpawning(MobEntity mobEntity, net.minecraft.world.World world) {
@@ -1077,10 +1114,22 @@ public class UndertaleExtinct implements ModInitializer {
 
         if (isNetherCreature) {
             if (isInNether) {
-                // Remove nether creatures from nether (except skeletons and endermen)
-                if (!(entityType == EntityType.SKELETON || entityType == EntityType.ENDERMAN)) {
+                // In nether: Allow skeletons, endermen, piglins, piglin brutes, hoglins and striders to exist
+                // Remove only dangerous mobs like blazes, magma cubes, wither skeletons, ghasts
+                if (entityType == EntityType.BLAZE ||
+                    entityType == EntityType.MAGMA_CUBE ||
+                    entityType == EntityType.WITHER_SKELETON ||
+                    entityType == EntityType.GHAST ||
+                    entityType == EntityType.ZOMBIFIED_PIGLIN ||
+                    entityType == EntityType.ZOGLIN) {
                     mobEntity.discard();
-                    LOGGER.debug("Removed existing nether creature from nether: {}", Registries.ENTITY_TYPE.getId(entityType));
+                    LOGGER.info("Removed existing dangerous nether creature from nether: {}", Registries.ENTITY_TYPE.getId(entityType));
+                } else {
+                    // Apply nether saved effects to allowed creatures and protect them
+                    if (!mobEntity.getCommandTags().contains("nether_saved_spawn")) {
+                        mobEntity.addCommandTag("nether_saved_spawn"); // Protect from extinction system
+                    }
+                    applyNetherSavedEffects(mobEntity);
                 }
             } else {
                 // Apply effects to nether creatures in overworld

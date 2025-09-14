@@ -1183,10 +1183,17 @@ public class UndertaleExtinct implements ModInitializer {
             // Create and spawn the mob
             MobEntity mob = (MobEntity) mobType.create(world);
             if (mob != null) {
-                // Special handling for ghasts - spawn 20 blocks above
+                // Special handling for ghasts - spawn 20 blocks above and check safety
                 double spawnY = spawnPos.getY();
                 if (mobType == EntityType.GHAST) {
                     spawnY += 20; // Spawn ghasts 20 blocks higher
+
+                    // Check if ghast spawn location is safe
+                    BlockPos ghastSpawnPos = new BlockPos((int)(spawnPos.getX() + 0.5), (int)spawnY, (int)(spawnPos.getZ() + 0.5));
+                    if (!isSafeGhastSpawnLocation(world, ghastSpawnPos)) {
+                        LOGGER.debug("Unsafe ghast spawn location at {}, cancelling spawn", ghastSpawnPos);
+                        return; // Don't spawn ghast in unsafe location
+                    }
                 }
 
                 mob.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnY, spawnPos.getZ() + 0.5,
@@ -1227,6 +1234,52 @@ public class UndertaleExtinct implements ModInitializer {
         return null;
     }
 
+    private boolean isSafeGhastSpawnLocation(ServerWorld world, BlockPos pos) {
+        // Check if position is below Y=63
+        if (pos.getY() < 63) {
+            return false;
+        }
+
+        // Check for sufficient air space (ghasts are 4x4x4)
+        for (int x = -2; x <= 2; x++) {
+            for (int y = -2; y <= 2; y++) {
+                for (int z = -2; z <= 2; z++) {
+                    BlockPos checkPos = pos.add(x, y, z);
+                    if (!world.getBlockState(checkPos).isAir()) {
+                        return false; // Not enough air space
+                    }
+                }
+            }
+        }
+
+        // Check for water or lava that could damage the ghast
+        for (int x = -3; x <= 3; x++) {
+            for (int y = -3; y <= 3; y++) {
+                for (int z = -3; z <= 3; z++) {
+                    BlockPos checkPos = pos.add(x, y, z);
+                    var blockState = world.getBlockState(checkPos);
+
+                    // Avoid spawning near water (damages ghasts) or lava
+                    if (blockState.isOf(net.minecraft.block.Blocks.WATER) ||
+                        blockState.isOf(net.minecraft.block.Blocks.LAVA)) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // Check if there's solid ground below (within reasonable distance) to avoid spawning in void
+        boolean foundGround = false;
+        for (int checkY = pos.getY() - 1; checkY >= Math.max(pos.getY() - 20, world.getBottomY()); checkY--) {
+            if (!world.getBlockState(new BlockPos(pos.getX(), checkY, pos.getZ())).isAir()) {
+                foundGround = true;
+                break;
+            }
+        }
+
+        return foundGround;
+    }
+
     private void spawnNetherMobNearLocation(ServerWorld world, BlockPos location) {
         Random random = world.getRandom();
 
@@ -1253,10 +1306,17 @@ public class UndertaleExtinct implements ModInitializer {
             // Create and spawn the mob
             MobEntity mob = (MobEntity) mobType.create(world);
             if (mob != null) {
-                // Special handling for ghasts - spawn 20 blocks above
+                // Special handling for ghasts - spawn 20 blocks above and check safety
                 double spawnY = spawnPos.getY();
                 if (mobType == EntityType.GHAST) {
                     spawnY += 20; // Spawn ghasts 20 blocks higher
+
+                    // Check if ghast spawn location is safe
+                    BlockPos ghastSpawnPos = new BlockPos((int)(spawnPos.getX() + 0.5), (int)spawnY, (int)(spawnPos.getZ() + 0.5));
+                    if (!isSafeGhastSpawnLocation(world, ghastSpawnPos)) {
+                        LOGGER.debug("Unsafe ghast spawn location at {}, cancelling spawn", ghastSpawnPos);
+                        return; // Don't spawn ghast in unsafe location
+                    }
                 }
 
                 mob.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnY, spawnPos.getZ() + 0.5,

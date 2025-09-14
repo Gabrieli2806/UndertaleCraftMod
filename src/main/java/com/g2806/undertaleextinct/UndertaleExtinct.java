@@ -867,19 +867,17 @@ public class UndertaleExtinct implements ModInitializer {
                 if (isOverworldSaved) {
                     world.iterateEntities().forEach(entity -> {
                         if (entity instanceof MobEntity mobEntity && mobEntity.isAlive() && !mobEntity.isRemoved()) {
-                            // Make all mobs neutral every 5 ticks if they become aggressive
-                            if (world.getTime() % 5 == 0) {
-                                // Remove any targets aggressively
-                                if (mobEntity.getTarget() != null) {
-                                    mobEntity.setTarget(null);
-                                    mobEntity.setAttacker(null);
-                                    LOGGER.debug("Neutralized aggressive mob: {}", Registries.ENTITY_TYPE.getId(mobEntity.getType()));
-                                }
+                            // Make all mobs neutral EVERY TICK - super aggressive
+                            // Remove any targets immediately
+                            if (mobEntity.getTarget() != null) {
+                                mobEntity.setTarget(null);
+                                mobEntity.setAttacker(null);
+                                LOGGER.debug("Neutralized aggressive mob: {}", Registries.ENTITY_TYPE.getId(mobEntity.getType()));
+                            }
 
-                                // Re-apply peaceful effects if they don't have spared tag
-                                if (!mobEntity.getCommandTags().contains("spared")) {
-                                    applyOverworldSavedEffects(mobEntity, world);
-                                }
+                            // Re-apply peaceful effects every 20 ticks if they don't have spared tag
+                            if (world.getTime() % 20 == 0 && !mobEntity.getCommandTags().contains("spared")) {
+                                applyOverworldSavedEffects(mobEntity, world);
                             }
                         }
                     });
@@ -1017,9 +1015,10 @@ public class UndertaleExtinct implements ModInitializer {
             mobEntity.setAiDisabled(false);
         }
 
-        // Add peaceful status effects
-        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 60, 0, true, false));
-        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 60, 4, true, false)); // Very weak attacks
+        // Add peaceful status effects - make them completely non-threatening
+        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 2, true, false)); // Very slow
+        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 1200, 10, true, false)); // Extremely weak attacks
+        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, 1200, 2, true, false)); // Take less damage to encourage peaceful behavior
 
         // Add "spared" tag and add to peaceful team if AI changes aren't sufficient
         if (!mobEntity.getCommandTags().contains("spared")) {
@@ -1027,15 +1026,21 @@ public class UndertaleExtinct implements ModInitializer {
             addMobToTeam(mobEntity, world);
         }
 
-        // Special handling for specific mob types
+        // Special handling for specific mob types - keep AI but make them peaceful
         if (entityType == EntityType.CREEPER) {
-            // Make creepers unable to explode by giving them weakness
+            // Make creepers unable to explode with extreme weakness but keep AI for movement
             mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 1200, 10, true, false));
         } else if (entityType == EntityType.ENDERMAN) {
-            // Make endermen less aggressive
+            // Make endermen peaceful but keep their AI for teleporting around
+            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 1, true, false));
+        } else if (entityType == EntityType.SPIDER || entityType == EntityType.CAVE_SPIDER) {
+            // Make spiders peaceful but keep their climbing abilities
+            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 1, true, false));
+        } else if (entityType == EntityType.WITCH) {
+            // Make witches peaceful but keep their AI for movement
             mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 1, true, false));
         } else if (isIllagerMob(entityType)) {
-            // Apply regeneration to illagers to represent their "redemption"
+            // Apply regeneration to illagers to represent their "redemption" but keep AI
             mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 100, 0, true, false));
         }
 
@@ -1178,7 +1183,13 @@ public class UndertaleExtinct implements ModInitializer {
             // Create and spawn the mob
             MobEntity mob = (MobEntity) mobType.create(world);
             if (mob != null) {
-                mob.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5,
+                // Special handling for ghasts - spawn 20 blocks above
+                double spawnY = spawnPos.getY();
+                if (mobType == EntityType.GHAST) {
+                    spawnY += 20; // Spawn ghasts 20 blocks higher
+                }
+
+                mob.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnY, spawnPos.getZ() + 0.5,
                     random.nextFloat() * 360.0F, 0.0F);
 
                 // Add special tag to protect from extinction system
@@ -1242,7 +1253,13 @@ public class UndertaleExtinct implements ModInitializer {
             // Create and spawn the mob
             MobEntity mob = (MobEntity) mobType.create(world);
             if (mob != null) {
-                mob.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5,
+                // Special handling for ghasts - spawn 20 blocks above
+                double spawnY = spawnPos.getY();
+                if (mobType == EntityType.GHAST) {
+                    spawnY += 20; // Spawn ghasts 20 blocks higher
+                }
+
+                mob.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnY, spawnPos.getZ() + 0.5,
                     random.nextFloat() * 360.0F, 0.0F);
 
                 // Add special tag to protect from extinction system

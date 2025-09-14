@@ -1,0 +1,27 @@
+{
+  "display": {
+    "icon": {
+      "item": "minecraft:dragon_egg"
+    },
+    "title": {
+      "text": "Save the Dragons",
+      "color": "dark_purple",
+      "bold": true
+    },
+    "description": {
+      "text": "Save the enderdragon from becoming extinct"
+    },
+    "frame": "challenge",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "dragons_saved": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "rewards": {
+    "experience": 1000
+  }
+}

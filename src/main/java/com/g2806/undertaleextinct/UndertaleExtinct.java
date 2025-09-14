@@ -13,6 +13,21 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.mob.*;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.entity.passive.SnifferEntity;
+import net.minecraft.entity.boss.dragon.EnderDragonEntity;
+import net.minecraft.entity.SpawnReason;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.random.Random;
+import net.minecraft.world.SpawnHelper;
+import net.minecraft.world.biome.source.BiomeAccess;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.world.World;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKeys;
@@ -42,6 +57,9 @@ public class UndertaleExtinct implements ModInitializer {
 
     // State management
     private static boolean isPurgeActive = false;
+    private static boolean isNetherSaved = false;
+    private static boolean isOverworldSaved = false;
+    private static boolean isEndSaved = false;
     private static final Set<Identifier> purgedMobs = ConcurrentHashMap.newKeySet();
     private static final Set<Identifier> extinctMobs = ConcurrentHashMap.newKeySet();
     private static final Map<Identifier, Integer> killCounts = new ConcurrentHashMap<>();
@@ -190,8 +208,11 @@ public class UndertaleExtinct implements ModInitializer {
                     .requires(source -> source.hasPermissionLevel(2))
                     .executes(context -> {
                         ServerCommandSource source = context.getSource();
-                        source.sendFeedback(() -> Text.literal("§6=== GENOCIDE ROUTE STATUS ==="), false);
+                        source.sendFeedback(() -> Text.literal("§6=== UNDERTALE MOD STATUS ==="), false);
                         source.sendFeedback(() -> Text.literal("§7Purge Active: " + (isPurgeActive ? "§4YES" : "§7NO")), false);
+                        source.sendFeedback(() -> Text.literal("§7Nether Saved: " + (isNetherSaved ? "§aTRUE" : "§7FALSE")), false);
+                        source.sendFeedback(() -> Text.literal("§7Overworld Saved: " + (isOverworldSaved ? "§aTRUE" : "§7FALSE")), false);
+                        source.sendFeedback(() -> Text.literal("§7End Saved: " + (isEndSaved ? "§aTRUE" : "§7FALSE")), false);
                         source.sendFeedback(() -> Text.literal("§7Extinction Threshold: §f" + EXTINCTION_THRESHOLD + " kills"), false);
                         source.sendFeedback(() -> Text.literal("§7Purged Species: §c" + purgedMobs.size()), false);
                         source.sendFeedback(() -> Text.literal("§7Extinct Species: §4" + extinctMobs.size()), false);
@@ -300,7 +321,109 @@ public class UndertaleExtinct implements ModInitializer {
                                 targetPlayer.sendMessage(Text.literal("§6An admin started the gun attack interface for you!"), false);
                                 return 1;
                             })));
-            
+
+            // Command to save the nether and overworld - Pacifist Routes
+            dispatcher.register(CommandManager.literal("undertale")
+                    .then(CommandManager.literal("nethersaved")
+                            .requires(source -> source.hasPermissionLevel(2))
+                            .executes(context -> {
+                                ServerCommandSource source = context.getSource();
+                                if (source.getEntity() instanceof ServerPlayerEntity player) {
+                                    if (isNetherSaved) {
+                                        source.sendFeedback(() -> Text.literal("§eThe nether has already been saved!"), false);
+                                        return 1;
+                                    }
+
+                                    // Activate nether saved mode
+                                    isNetherSaved = true;
+
+                                    // Grant advancement
+                                    grantNetherSavedAdvancement(player);
+
+                                    source.sendFeedback(() -> Text.literal("§a✦ THE NETHER HAS BEEN SAVED! ✦"), false);
+                                    source.sendFeedback(() -> Text.literal("§6All nether inhabitants are now safe and at peace."), false);
+                                    source.sendFeedback(() -> Text.literal("§7They will be neutral and regenerate in the overworld."), false);
+
+                                    LOGGER.info("Player {} activated nether saved mode", player.getName().getString());
+                                    return 1;
+                                }
+                                return 0;
+                            }))
+                    .then(CommandManager.literal("overworldsaved")
+                            .requires(source -> source.hasPermissionLevel(2))
+                            .executes(context -> {
+                                ServerCommandSource source = context.getSource();
+                                if (source.getEntity() instanceof ServerPlayerEntity player) {
+                                    if (isOverworldSaved) {
+                                        source.sendFeedback(() -> Text.literal("§eThe overworld has already been saved!"), false);
+                                        return 1;
+                                    }
+
+                                    // Activate overworld saved mode
+                                    isOverworldSaved = true;
+
+                                    // Grant advancement
+                                    grantOverworldSavedAdvancement(player);
+
+                                    source.sendFeedback(() -> Text.literal("§a✦ THE OVERWORLD HAS BEEN SAVED! ✦"), false);
+                                    source.sendFeedback(() -> Text.literal("§6All creatures now live in harmony and peace."), false);
+                                    source.sendFeedback(() -> Text.literal("§7Undead have been cured, and raids are no more."), false);
+
+                                    LOGGER.info("Player {} activated overworld saved mode", player.getName().getString());
+                                    return 1;
+                                }
+                                return 0;
+                            }))
+                    .then(CommandManager.literal("endsaved")
+                            .requires(source -> source.hasPermissionLevel(2))
+                            .executes(context -> {
+                                ServerCommandSource source = context.getSource();
+                                if (source.getEntity() instanceof ServerPlayerEntity player) {
+                                    if (isEndSaved) {
+                                        source.sendFeedback(() -> Text.literal("§eThe end has already been saved!"), false);
+                                        return 1;
+                                    }
+
+                                    // Activate end saved mode
+                                    isEndSaved = true;
+
+                                    // Grant advancement
+                                    grantEndSavedAdvancement(player);
+
+                                    source.sendFeedback(() -> Text.literal("§5✦ THE END HAS BEEN SAVED! ✦"), false);
+                                    source.sendFeedback(() -> Text.literal("§6The dragons are now safe and free to roam."), false);
+                                    source.sendFeedback(() -> Text.literal("§7Peaceful enderdragons will appear in the end."), false);
+
+                                    LOGGER.info("Player {} activated end saved mode", player.getName().getString());
+                                    return 1;
+                                }
+                                return 0;
+                            }))
+                    .then(CommandManager.literal("resetoverworld")
+                            .requires(source -> source.hasPermissionLevel(2))
+                            .executes(context -> {
+                                ServerCommandSource source = context.getSource();
+                                isOverworldSaved = false;
+                                source.sendFeedback(() -> Text.literal("§cOverworld saved mode reset! All creatures return to normal."), false);
+                                return 1;
+                            }))
+                    .then(CommandManager.literal("resetnether")
+                            .requires(source -> source.hasPermissionLevel(2))
+                            .executes(context -> {
+                                ServerCommandSource source = context.getSource();
+                                isNetherSaved = false;
+                                source.sendFeedback(() -> Text.literal("§cNether saved mode reset! Nether creatures return to nether."), false);
+                                return 1;
+                            }))
+                    .then(CommandManager.literal("resetend")
+                            .requires(source -> source.hasPermissionLevel(2))
+                            .executes(context -> {
+                                ServerCommandSource source = context.getSource();
+                                isEndSaved = false;
+                                source.sendFeedback(() -> Text.literal("§cEnd saved mode reset! Dragons return to normal."), false);
+                                return 1;
+                            })));
+
             // Numbered attack commands (1-20) - each saves to separate scoreboard
             for (int i = 1; i <= 20; i++) {
                 final int attackNumber = i; // Final for lambda
@@ -396,7 +519,103 @@ public class UndertaleExtinct implements ModInitializer {
                     }));
         });
     }
-    
+
+    private void grantNetherSavedAdvancement(ServerPlayerEntity player) {
+        try {
+            // Actually grant the advancement
+            var advancementManager = player.getServer().getAdvancementLoader();
+            var advancement = advancementManager.get(new net.minecraft.util.Identifier("undertaleextinct", "save_the_nether"));
+
+            if (advancement != null) {
+                var playerAdvancementTracker = player.getAdvancementTracker();
+                if (!playerAdvancementTracker.getProgress(advancement).isDone()) {
+                    // Grant all criteria for this advancement
+                    for (String criteria : advancement.getCriteria().keySet()) {
+                        playerAdvancementTracker.grantCriterion(advancement, criteria);
+                    }
+                }
+            }
+
+            // Send legendary advancement message and effects
+            player.sendMessage(Text.literal("§6✦ LEGENDARY ADVANCEMENT UNLOCKED ✦"), false);
+            player.sendMessage(Text.literal("§e★ Save the Nether ★"), false);
+            player.sendMessage(Text.literal("§7Save the nether and its inhabitants from the flames"), false);
+
+            // Add visual and audio effects for legendary achievement
+            player.playSound(net.minecraft.sound.SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
+
+            // Additional epic sounds for legendary feel
+            player.playSound(net.minecraft.sound.SoundEvents.ENTITY_ENDER_DRAGON_DEATH, 0.3f, 1.5f);
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to grant nether saved advancement effects", e);
+        }
+    }
+
+    private void grantOverworldSavedAdvancement(ServerPlayerEntity player) {
+        try {
+            // Actually grant the advancement
+            var advancementManager = player.getServer().getAdvancementLoader();
+            var advancement = advancementManager.get(new net.minecraft.util.Identifier("undertaleextinct", "save_the_world"));
+
+            if (advancement != null) {
+                var playerAdvancementTracker = player.getAdvancementTracker();
+                if (!playerAdvancementTracker.getProgress(advancement).isDone()) {
+                    // Grant all criteria for this advancement
+                    for (String criteria : advancement.getCriteria().keySet()) {
+                        playerAdvancementTracker.grantCriterion(advancement, criteria);
+                    }
+                }
+            }
+
+            // Send legendary advancement message and effects
+            player.sendMessage(Text.literal("§6✦ LEGENDARY ADVANCEMENT UNLOCKED ✦"), false);
+            player.sendMessage(Text.literal("§a★ Save the World ★"), false);
+            player.sendMessage(Text.literal("§7Save the world from infection and zombies, and have everyone living in harmony"), false);
+
+            // Add visual and audio effects for legendary achievement
+            player.playSound(net.minecraft.sound.SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
+
+            // Additional epic sounds for legendary feel - different from nether
+            player.playSound(net.minecraft.sound.SoundEvents.BLOCK_BELL_USE, 0.5f, 1.2f);
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to grant overworld saved advancement effects", e);
+        }
+    }
+
+    private void grantEndSavedAdvancement(ServerPlayerEntity player) {
+        try {
+            // Actually grant the advancement
+            var advancementManager = player.getServer().getAdvancementLoader();
+            var advancement = advancementManager.get(new net.minecraft.util.Identifier("undertaleextinct", "save_the_dragons"));
+
+            if (advancement != null) {
+                var playerAdvancementTracker = player.getAdvancementTracker();
+                if (!playerAdvancementTracker.getProgress(advancement).isDone()) {
+                    // Grant all criteria for this advancement
+                    for (String criteria : advancement.getCriteria().keySet()) {
+                        playerAdvancementTracker.grantCriterion(advancement, criteria);
+                    }
+                }
+            }
+
+            // Send legendary advancement message and effects
+            player.sendMessage(Text.literal("§6✦ LEGENDARY ADVANCEMENT UNLOCKED ✦"), false);
+            player.sendMessage(Text.literal("§5★ Save the Dragons ★"), false);
+            player.sendMessage(Text.literal("§7Save the enderdragon from becoming extinct"), false);
+
+            // Add visual and audio effects for legendary achievement
+            player.playSound(net.minecraft.sound.SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
+
+            // Additional epic sounds for legendary feel - dragon-themed
+            player.playSound(net.minecraft.sound.SoundEvents.ENTITY_ENDER_DRAGON_AMBIENT, 0.3f, 1.0f);
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to grant end saved advancement effects", e);
+        }
+    }
+
     private void showPlayerStats(ServerPlayerEntity player) {
         UndertaleScoreboard.PlayerScores scores = UndertaleScoreboard.getPlayerScores(player.getUuid());
         
@@ -553,10 +772,34 @@ public class UndertaleExtinct implements ModInitializer {
             if (entity instanceof MobEntity mobEntity && entity.getType() != null) {
                 Identifier mobId = Registries.ENTITY_TYPE.getId(entity.getType());
 
+                // Handle nether saved mode spawning rules
+                if (isNetherSaved) {
+                    handleNetherSavedSpawning(mobEntity, world);
+
+                    // Percentage-based nether mob spawning in overworld
+                    if (world.getRegistryKey() == World.OVERWORLD && !isNetherMob(mobEntity.getType())) {
+                        // 25% chance to spawn a nether mob when any overworld mob spawns
+                        if (world instanceof ServerWorld) {
+                            ServerWorld serverWorld = (ServerWorld) world;
+                            if (serverWorld.getRandom().nextFloat() < 0.25f) {
+                                spawnNetherMobNearLocation(serverWorld, mobEntity.getBlockPos());
+                            }
+                        }
+                    }
+                }
+
+                // Handle overworld saved mode spawning rules
+                if (isOverworldSaved) {
+                    handleOverworldSavedSpawning(mobEntity, world);
+                }
+
                 if (mobId != null && (purgedMobs.contains(mobId) || extinctMobs.contains(mobId))) {
-                    // Immediate removal - no delay whatsoever
-                    mobEntity.discard();
-                    LOGGER.debug("Instantly removed extinct mob: {}", mobId);
+                    // Don't remove mobs that were spawned as part of nether saved system
+                    if (!mobEntity.getCommandTags().contains("nether_saved_spawn")) {
+                        // Immediate removal - no delay whatsoever
+                        mobEntity.discard();
+                        LOGGER.debug("Instantly removed extinct mob: {}", mobId);
+                    }
                 }
             }
         });
@@ -564,23 +807,627 @@ public class UndertaleExtinct implements ModInitializer {
         // Super aggressive tick-based cleanup - every single tick for maximum speed
         ServerTickEvents.END_WORLD_TICK.register(world -> {
             try {
-                // Check EVERY tick for instant removal
+                // Check EVERY tick for instant removal and nether saved effects
                 world.iterateEntities().forEach(entity -> {
                     if (entity instanceof MobEntity mobEntity && mobEntity.isAlive() && !mobEntity.isRemoved()) {
                         EntityType<?> entityType = mobEntity.getType();
                         if (entityType != null) {
                             Identifier mobId = Registries.ENTITY_TYPE.getId(entityType);
+
+                            // Handle extinct/purged mob removal
                             if (mobId != null && (purgedMobs.contains(mobId) || extinctMobs.contains(mobId))) {
-                                mobEntity.discard();
-                                LOGGER.debug("Tick-removed extinct mob: {}", mobId);
+                                // Don't remove mobs that were spawned as part of nether saved system
+                                if (!mobEntity.getCommandTags().contains("nether_saved_spawn")) {
+                                    mobEntity.discard();
+                                    LOGGER.debug("Tick-removed extinct mob: {}", mobId);
+                                    return;
+                                }
+                            }
+
+                            // Handle nether saved mode for existing mobs every 100 ticks (5 seconds)
+                            if (isNetherSaved && world.getTime() % 100 == 0) {
+                                handleExistingNetherMob(mobEntity, world);
+                            }
+
+                            // Handle overworld saved mode for existing mobs every 100 ticks (5 seconds)
+                            if (isOverworldSaved && world.getTime() % 100 == 0) {
+                                handleExistingOverworldMob(mobEntity, world);
                             }
                         }
                     }
                 });
+
+                // Handle raid disabling every 200 ticks (10 seconds)
+                if (isOverworldSaved && world.getTime() % 200 == 0) {
+                    disableActiveRaids(world);
+                }
+
+                // Timer-based nether mob spawning removed - now handled via percentage-based spawning on natural spawns
+
+                // Handle natural sniffer spawning every 600 ticks (30 seconds)
+                if (world.getRegistryKey() == World.OVERWORLD && world.getTime() % 600 == 0) {
+                    spawnSniffersNaturally(world);
+                }
+
+                // Handle peaceful pillager spawning in villages and strongholds every 500 ticks (25 seconds)
+                if (isOverworldSaved && world.getRegistryKey() == World.OVERWORLD && world.getTime() % 500 == 0) {
+                    spawnPillagersInVillages(world);
+                }
+
+                // Handle peaceful enderdragon spawning in the end every 800 ticks (40 seconds)
+                if (isEndSaved && world.getRegistryKey() == World.END && world.getTime() % 800 == 0) {
+                    spawnPeacefulEnderdragons(world);
+                }
+            } catch (Exception e) {
+                // Ignore errors to prevent crash loops
+            }
+
+            // Additional aggressive mob neutralization check
+            try {
+                if (isOverworldSaved) {
+                    world.iterateEntities().forEach(entity -> {
+                        if (entity instanceof MobEntity mobEntity && mobEntity.isAlive() && !mobEntity.isRemoved()) {
+                            // Make all mobs neutral every 5 ticks if they become aggressive
+                            if (world.getTime() % 5 == 0) {
+                                // Remove any targets aggressively
+                                if (mobEntity.getTarget() != null) {
+                                    mobEntity.setTarget(null);
+                                    mobEntity.setAttacker(null);
+                                    LOGGER.debug("Neutralized aggressive mob: {}", Registries.ENTITY_TYPE.getId(mobEntity.getType()));
+                                }
+
+                                // Re-apply peaceful effects if they don't have spared tag
+                                if (!mobEntity.getCommandTags().contains("spared")) {
+                                    applyOverworldSavedEffects(mobEntity, world);
+                                }
+                            }
+                        }
+                    });
+                }
             } catch (Exception e) {
                 // Ignore errors to prevent crash loops
             }
         });
+    }
+
+    private void handleNetherSavedSpawning(MobEntity mobEntity, net.minecraft.world.World world) {
+        EntityType<?> entityType = mobEntity.getType();
+        Identifier mobId = Registries.ENTITY_TYPE.getId(entityType);
+
+        // Check if this is in the nether
+        boolean isInNether = world.getRegistryKey() == World.NETHER;
+        boolean isInOverworld = world.getRegistryKey() == World.OVERWORLD;
+
+        // List of nether creatures that should be affected
+        boolean isNetherCreature = isNetherMob(entityType);
+
+        if (isNetherCreature) {
+            if (isInNether) {
+                // In nether: Only allow skeletons and endermen, block everything else
+                if (!(entityType == EntityType.SKELETON || entityType == EntityType.ENDERMAN)) {
+                    mobEntity.discard();
+                    LOGGER.debug("Removed nether creature from nether (nether saved mode): {}", mobId);
+                    return;
+                }
+            } else if (isInOverworld) {
+                // In overworld: Allow nether creatures but with modifications
+                // Exclude zombie variants as requested
+                if (entityType == EntityType.ZOMBIFIED_PIGLIN) {
+                    mobEntity.discard();
+                    LOGGER.debug("Removed zombie nether creature from overworld: {}", mobId);
+                    return;
+                }
+
+                // Apply special effects to allowed nether creatures
+                applyNetherSavedEffects(mobEntity);
+            }
+        }
+    }
+
+    private boolean isNetherMob(EntityType<?> entityType) {
+        return entityType == EntityType.BLAZE ||
+               entityType == EntityType.GHAST ||
+               entityType == EntityType.MAGMA_CUBE ||
+               entityType == EntityType.STRIDER ||
+               entityType == EntityType.HOGLIN ||
+               entityType == EntityType.PIGLIN ||
+               entityType == EntityType.PIGLIN_BRUTE ||
+               entityType == EntityType.WITHER_SKELETON ||
+               entityType == EntityType.ZOMBIFIED_PIGLIN ||
+               entityType == EntityType.ZOGLIN;
+    }
+
+    private void applyNetherSavedEffects(MobEntity mobEntity) {
+        // Make all nether mobs neutral (non-aggressive)
+        mobEntity.setAiDisabled(false);
+
+        // Apply infinite regeneration to piglins and zoglins
+        EntityType<?> entityType = mobEntity.getType();
+        if (entityType == EntityType.PIGLIN || entityType == EntityType.PIGLIN_BRUTE ||
+            entityType == EntityType.ZOGLIN || entityType == EntityType.HOGLIN) {
+
+            // Apply infinite regeneration effect
+            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, Integer.MAX_VALUE, 0, true, false));
+
+            // Make piglins immune to zombification
+            if (mobEntity instanceof PiglinEntity piglin) {
+                piglin.setImmuneToZombification(true);
+            }
+            if (mobEntity instanceof PiglinBruteEntity piglinBrute) {
+                piglinBrute.setImmuneToZombification(true);
+            }
+        }
+
+        // Try to make mobs neutral by disabling AI temporarily and re-enabling it
+        // This will reset their targeting behavior
+        boolean wasAiDisabled = mobEntity.isAiDisabled();
+        if (!wasAiDisabled) {
+            mobEntity.setAiDisabled(true);
+            mobEntity.setAiDisabled(false);
+        }
+
+        LOGGER.debug("Applied nether saved effects to: {}", Registries.ENTITY_TYPE.getId(entityType));
+    }
+
+    private void handleOverworldSavedSpawning(MobEntity mobEntity, net.minecraft.world.World world) {
+        EntityType<?> entityType = mobEntity.getType();
+        Identifier mobId = Registries.ENTITY_TYPE.getId(entityType);
+
+        // Check if this is an undead mob or iron golem
+        if (isUndeadMob(entityType) || entityType == EntityType.IRON_GOLEM) {
+            mobEntity.discard();
+            LOGGER.debug("Removed undead/iron golem in overworld saved mode: {}", mobId);
+            return;
+        }
+
+        // Apply peaceful effects to all mobs
+        applyOverworldSavedEffects(mobEntity, world);
+
+        // Handle special villager-pillager coexistence
+        handleVillagerPillagerCoexistence(mobEntity, world);
+    }
+
+    private boolean isUndeadMob(EntityType<?> entityType) {
+        // Only truly undead mobs that should be removed - exclude living creatures
+        return entityType == EntityType.ZOMBIE ||
+               entityType == EntityType.SKELETON ||
+               entityType == EntityType.SLIME ||
+               entityType == EntityType.PHANTOM ||
+               entityType == EntityType.DROWNED ||
+               entityType == EntityType.HUSK ||
+               entityType == EntityType.STRAY ||
+               entityType == EntityType.ZOMBIE_VILLAGER ||
+               entityType == EntityType.WITHER_SKELETON ||
+               entityType == EntityType.WITHER ||
+               entityType == EntityType.ZOMBIE_HORSE ||
+               entityType == EntityType.SKELETON_HORSE;
+    }
+
+    private void applyOverworldSavedEffects(MobEntity mobEntity, net.minecraft.world.World world) {
+        EntityType<?> entityType = mobEntity.getType();
+
+        // Aggressively neutralize the mob
+        mobEntity.setTarget(null);  // Remove current target immediately
+        mobEntity.setAttacker(null); // Remove attacker memory
+
+        // Make all mobs neutral by resetting AI
+        boolean wasAiDisabled = mobEntity.isAiDisabled();
+        if (!wasAiDisabled) {
+            mobEntity.setAiDisabled(true);
+            mobEntity.setAiDisabled(false);
+        }
+
+        // Add peaceful status effects
+        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 60, 0, true, false));
+        mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 60, 4, true, false)); // Very weak attacks
+
+        // Add "spared" tag and add to peaceful team if AI changes aren't sufficient
+        if (!mobEntity.getCommandTags().contains("spared")) {
+            mobEntity.addCommandTag("spared");
+            addMobToTeam(mobEntity, world);
+        }
+
+        // Special handling for specific mob types
+        if (entityType == EntityType.CREEPER) {
+            // Make creepers unable to explode by giving them weakness
+            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 1200, 10, true, false));
+        } else if (entityType == EntityType.ENDERMAN) {
+            // Make endermen less aggressive
+            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 1200, 1, true, false));
+        } else if (isIllagerMob(entityType)) {
+            // Apply regeneration to illagers to represent their "redemption"
+            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 100, 0, true, false));
+        }
+
+        LOGGER.debug("Applied overworld saved effects to: {}", Registries.ENTITY_TYPE.getId(entityType));
+    }
+
+    private boolean isIllagerMob(EntityType<?> entityType) {
+        return entityType == EntityType.PILLAGER ||
+               entityType == EntityType.VINDICATOR ||
+               entityType == EntityType.EVOKER ||
+               entityType == EntityType.RAVAGER ||
+               entityType == EntityType.VEX;
+    }
+
+    private void handleVillagerPillagerCoexistence(MobEntity mobEntity, net.minecraft.world.World world) {
+        EntityType<?> entityType = mobEntity.getType();
+
+        // Special handling for illagers - they should no longer be hostile to villagers
+        if (isIllagerMob(entityType)) {
+            // Remove any existing targets that are villagers
+            mobEntity.setTarget(null);
+
+            // Apply additional peaceful effects
+            mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 200, 0, true, false));
+
+            LOGGER.debug("Made illager peaceful towards villagers: {}", Registries.ENTITY_TYPE.getId(entityType));
+        }
+    }
+
+    private void handleExistingNetherMob(MobEntity mobEntity, net.minecraft.world.World world) {
+        EntityType<?> entityType = mobEntity.getType();
+        boolean isInNether = world.getRegistryKey() == World.NETHER;
+        boolean isNetherCreature = isNetherMob(entityType);
+
+        if (isNetherCreature) {
+            if (isInNether) {
+                // Remove nether creatures from nether (except skeletons and endermen)
+                if (!(entityType == EntityType.SKELETON || entityType == EntityType.ENDERMAN)) {
+                    mobEntity.discard();
+                    LOGGER.debug("Removed existing nether creature from nether: {}", Registries.ENTITY_TYPE.getId(entityType));
+                }
+            } else {
+                // Apply effects to nether creatures in overworld
+                applyNetherSavedEffects(mobEntity);
+            }
+        }
+    }
+
+    private void handleExistingOverworldMob(MobEntity mobEntity, net.minecraft.world.World world) {
+        EntityType<?> entityType = mobEntity.getType();
+
+        // Remove undead mobs and iron golems
+        if (isUndeadMob(entityType) || entityType == EntityType.IRON_GOLEM) {
+            mobEntity.discard();
+            LOGGER.debug("Removed existing undead/iron golem: {}", Registries.ENTITY_TYPE.getId(entityType));
+        } else {
+            // Apply peaceful effects to all other mobs
+            applyOverworldSavedEffects(mobEntity, world);
+        }
+    }
+
+    private void disableActiveRaids(net.minecraft.world.World world) {
+        // Raids are disabled through the illager mob behavior changes
+        // Illagers are now neutral and don't attack villagers
+        LOGGER.debug("Raids prevented through peaceful illager behavior");
+    }
+
+    private void addMobToTeam(MobEntity mobEntity, net.minecraft.world.World world) {
+        if (world instanceof ServerWorld serverWorld) {
+            try {
+                // Get or create the "spared" team
+                var scoreboardManager = serverWorld.getServer().getScoreboard();
+                var sparedTeam = scoreboardManager.getTeam("spared");
+
+                if (sparedTeam == null) {
+                    sparedTeam = scoreboardManager.addTeam("spared");
+                    sparedTeam.setFriendlyFireAllowed(false); // Prevent team members from attacking each other
+                    LOGGER.info("Created 'spared' team for peaceful mobs");
+                }
+
+                // Add mob to the team
+                String mobName = mobEntity.getUuid().toString();
+                scoreboardManager.addPlayerToTeam(mobName, sparedTeam);
+
+                LOGGER.debug("Added mob to spared team: {}", Registries.ENTITY_TYPE.getId(mobEntity.getType()));
+            } catch (Exception e) {
+                LOGGER.debug("Failed to add mob to team: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void spawnNetherMobsInOverworld(net.minecraft.world.World world) {
+        if (world instanceof ServerWorld serverWorld) {
+            try {
+                // Get all players in the world
+                var players = serverWorld.getPlayers();
+                if (players.isEmpty()) {
+                    LOGGER.info("No players found for nether mob spawning");
+                    return;
+                }
+
+                LOGGER.info("Found {} players for nether mob spawning", players.size());
+
+                // Spawn nether mobs around random players
+                int spawnAttempts = Math.min(3, players.size());
+                for (int i = 0; i < spawnAttempts; i++) {
+                    var player = players.get(serverWorld.getRandom().nextInt(players.size()));
+                    LOGGER.info("Attempting to spawn nether mob near player: {}", player.getName().getString());
+                    spawnNetherMobNearPlayer(serverWorld, player);
+                }
+            } catch (Exception e) {
+                LOGGER.error("Failed to spawn nether mobs: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void spawnNetherMobNearPlayer(ServerWorld world, net.minecraft.server.network.ServerPlayerEntity player) {
+        Random random = world.getRandom();
+
+        // Don't spawn too close to player (min 16 blocks, max 48 blocks away)
+        int distance = 16 + random.nextInt(32);
+        double angle = random.nextDouble() * 2 * Math.PI;
+
+        int spawnX = (int) (player.getX() + Math.cos(angle) * distance);
+        int spawnZ = (int) (player.getZ() + Math.sin(angle) * distance);
+
+        // Find a suitable Y coordinate
+        BlockPos spawnPos = findSuitableSpawnPos(world, new BlockPos(spawnX, player.getBlockY(), spawnZ));
+        if (spawnPos == null) return;
+
+        // Select a random nether mob type (excluding blazes, wither skeletons, magma cubes, zombie piglins, and zoglins)
+        EntityType<?>[] netherMobTypes = {
+            EntityType.GHAST, EntityType.STRIDER, EntityType.HOGLIN,
+            EntityType.PIGLIN, EntityType.PIGLIN_BRUTE
+        };
+
+        EntityType<?> mobType = netherMobTypes[random.nextInt(netherMobTypes.length)];
+
+        try {
+            // Create and spawn the mob
+            MobEntity mob = (MobEntity) mobType.create(world);
+            if (mob != null) {
+                mob.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5,
+                    random.nextFloat() * 360.0F, 0.0F);
+
+                // Add special tag to protect from extinction system
+                mob.addCommandTag("nether_saved_spawn");
+
+                // Apply nether saved effects immediately
+                applyNetherSavedEffects(mob);
+
+                // Spawn the mob
+                world.spawnEntity(mob);
+                LOGGER.debug("Spawned peaceful {} at {} for nether saved mode",
+                    Registries.ENTITY_TYPE.getId(mobType), spawnPos);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Failed to spawn nether mob {}: {}", mobType, e.getMessage());
+        }
+    }
+
+    private BlockPos findSuitableSpawnPos(ServerWorld world, BlockPos centerPos) {
+        // Try to find a suitable spawn location within a small range
+        for (int attempts = 0; attempts < 10; attempts++) {
+            int x = centerPos.getX() + world.getRandom().nextInt(10) - 5;
+            int z = centerPos.getZ() + world.getRandom().nextInt(10) - 5;
+
+            // Find the top solid block
+            for (int y = world.getTopY(); y > world.getBottomY(); y--) {
+                BlockPos pos = new BlockPos(x, y, z);
+                if (world.getBlockState(pos).isOpaque() &&
+                    world.getBlockState(pos.up()).isAir() &&
+                    world.getBlockState(pos.up(2)).isAir()) {
+                    return pos.up();
+                }
+            }
+        }
+        return null;
+    }
+
+    private void spawnNetherMobNearLocation(ServerWorld world, BlockPos location) {
+        Random random = world.getRandom();
+
+        // Spawn 10-20 blocks away from the original spawn location
+        int distance = 10 + random.nextInt(10);
+        double angle = random.nextDouble() * 2 * Math.PI;
+
+        int spawnX = (int) (location.getX() + Math.cos(angle) * distance);
+        int spawnZ = (int) (location.getZ() + Math.sin(angle) * distance);
+
+        // Find a suitable Y coordinate
+        BlockPos spawnPos = findSuitableSpawnPos(world, new BlockPos(spawnX, location.getY(), spawnZ));
+        if (spawnPos == null) return;
+
+        // Select a random nether mob type (excluding blazes, wither skeletons, magma cubes, zombie piglins, and zoglins)
+        EntityType<?>[] netherMobTypes = {
+            EntityType.GHAST, EntityType.STRIDER, EntityType.HOGLIN,
+            EntityType.PIGLIN, EntityType.PIGLIN_BRUTE
+        };
+
+        EntityType<?> mobType = netherMobTypes[random.nextInt(netherMobTypes.length)];
+
+        try {
+            // Create and spawn the mob
+            MobEntity mob = (MobEntity) mobType.create(world);
+            if (mob != null) {
+                mob.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5,
+                    random.nextFloat() * 360.0F, 0.0F);
+
+                // Add special tag to protect from extinction system
+                mob.addCommandTag("nether_saved_spawn");
+
+                // Apply nether saved effects immediately
+                applyNetherSavedEffects(mob);
+
+                // Spawn the mob
+                world.spawnEntity(mob);
+                LOGGER.debug("Spawned percentage-based {} at {} for nether saved mode",
+                    Registries.ENTITY_TYPE.getId(mobType), spawnPos);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Failed to spawn percentage-based nether mob: {}", e.getMessage());
+        }
+    }
+
+    private void spawnSniffersNaturally(net.minecraft.world.World world) {
+        if (world instanceof ServerWorld serverWorld) {
+            try {
+                // Get all players in the world
+                var players = serverWorld.getPlayers();
+                if (players.isEmpty()) return;
+
+                // Limit sniffer spawning - only spawn if there are fewer than 5 sniffers in the world
+                long snifferCount = 0;
+                for (var entity : serverWorld.iterateEntities()) {
+                    if (entity instanceof SnifferEntity) {
+                        snifferCount++;
+                    }
+                }
+                if (snifferCount >= 5) return;
+
+                // 25% chance to spawn a sniffer
+                if (serverWorld.getRandom().nextFloat() > 0.25f) return;
+
+                // Spawn sniffer around a random player
+                var player = players.get(serverWorld.getRandom().nextInt(players.size()));
+                spawnSnifferNearPlayer(serverWorld, player);
+
+            } catch (Exception e) {
+                LOGGER.debug("Failed to spawn sniffers: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void spawnSnifferNearPlayer(ServerWorld world, net.minecraft.server.network.ServerPlayerEntity player) {
+        Random random = world.getRandom();
+
+        // Spawn 20-40 blocks away from player
+        int distance = 20 + random.nextInt(20);
+        double angle = random.nextDouble() * 2 * Math.PI;
+
+        int spawnX = (int) (player.getX() + Math.cos(angle) * distance);
+        int spawnZ = (int) (player.getZ() + Math.sin(angle) * distance);
+
+        // Find a suitable Y coordinate
+        BlockPos spawnPos = findSuitableSpawnPos(world, new BlockPos(spawnX, player.getBlockY(), spawnZ));
+        if (spawnPos == null) return;
+
+        try {
+            // Create and spawn the sniffer
+            SnifferEntity sniffer = EntityType.SNIFFER.create(world);
+            if (sniffer != null) {
+                sniffer.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5,
+                    random.nextFloat() * 360.0F, 0.0F);
+
+                world.spawnEntity(sniffer);
+                LOGGER.debug("Spawned natural sniffer at {} near player {}", spawnPos, player.getName().getString());
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Failed to spawn sniffer: {}", e.getMessage());
+        }
+    }
+
+    private void spawnPeacefulEnderdragons(net.minecraft.world.World world) {
+        if (world instanceof ServerWorld serverWorld) {
+            try {
+                // Limit enderdragon spawning - only spawn if there are fewer than 3 dragons in the end
+                long dragonCount = 0;
+                for (var entity : serverWorld.iterateEntities()) {
+                    if (entity instanceof EnderDragonEntity) {
+                        dragonCount++;
+                    }
+                }
+                if (dragonCount >= 3) return;
+
+                // 30% chance to spawn a dragon
+                if (serverWorld.getRandom().nextFloat() > 0.30f) return;
+
+                spawnPeacefulEnderdragon(serverWorld);
+
+            } catch (Exception e) {
+                LOGGER.debug("Failed to spawn peaceful enderdragons: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void spawnPeacefulEnderdragon(ServerWorld world) {
+        Random random = world.getRandom();
+
+        // Spawn at a high altitude in the end
+        int spawnX = random.nextInt(200) - 100; // -100 to 100
+        int spawnY = 80 + random.nextInt(40);   // 80 to 120
+        int spawnZ = random.nextInt(200) - 100; // -100 to 100
+
+        BlockPos spawnPos = new BlockPos(spawnX, spawnY, spawnZ);
+
+        try {
+            // Create and spawn the enderdragon
+            EnderDragonEntity dragon = EntityType.ENDER_DRAGON.create(world);
+            if (dragon != null) {
+                dragon.refreshPositionAndAngles(spawnPos.getX(), spawnPos.getY(), spawnPos.getZ(),
+                    random.nextFloat() * 360.0F, 0.0F);
+
+                // Make the dragon peaceful
+                dragon.setAiDisabled(false);
+                dragon.setTarget(null);
+
+                // Apply regeneration effect to represent the dragon being "saved"
+                dragon.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 200, 1, true, false));
+
+                world.spawnEntity(dragon);
+                LOGGER.debug("Spawned peaceful enderdragon at {} in end saved mode", spawnPos);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Failed to spawn peaceful enderdragon: {}", e.getMessage());
+        }
+    }
+
+    private void spawnPillagersInVillages(net.minecraft.world.World world) {
+        if (world instanceof ServerWorld serverWorld) {
+            try {
+                // Get all players in the world
+                var players = serverWorld.getPlayers();
+                if (players.isEmpty()) return;
+
+                // 20% chance to spawn a pillager near a village
+                if (serverWorld.getRandom().nextFloat() > 0.20f) return;
+
+                // Spawn peaceful pillager around a random player (representing village area)
+                var player = players.get(serverWorld.getRandom().nextInt(players.size()));
+                spawnPeacefulPillagerNearPlayer(serverWorld, player);
+
+            } catch (Exception e) {
+                LOGGER.debug("Failed to spawn pillagers in villages: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void spawnPeacefulPillagerNearPlayer(ServerWorld world, net.minecraft.server.network.ServerPlayerEntity player) {
+        Random random = world.getRandom();
+
+        // Spawn 15-30 blocks away from player (village distance)
+        int distance = 15 + random.nextInt(15);
+        double angle = random.nextDouble() * 2 * Math.PI;
+
+        int spawnX = (int) (player.getX() + Math.cos(angle) * distance);
+        int spawnZ = (int) (player.getZ() + Math.sin(angle) * distance);
+
+        // Find a suitable Y coordinate
+        BlockPos spawnPos = findSuitableSpawnPos(world, new BlockPos(spawnX, player.getBlockY(), spawnZ));
+        if (spawnPos == null) return;
+
+        try {
+            // Create and spawn the pillager
+            PillagerEntity pillager = EntityType.PILLAGER.create(world);
+            if (pillager != null) {
+                pillager.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5,
+                    random.nextFloat() * 360.0F, 0.0F);
+
+                // Apply overworld saved effects immediately (peaceful, spared tag, team)
+                applyOverworldSavedEffects(pillager, world);
+
+                // Additional peaceful effects for pillagers
+                pillager.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 600, 0, true, false));
+                pillager.setTarget(null); // Ensure no hostility
+
+                world.spawnEntity(pillager);
+                LOGGER.debug("Spawned peaceful pillager near village at: {}", spawnPos);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Failed to spawn peaceful pillager: {}", e.getMessage());
+        }
     }
 
     private void registerServerEvents() {
@@ -631,6 +1478,9 @@ public class UndertaleExtinct implements ModInitializer {
 
             data.extinctionThreshold = EXTINCTION_THRESHOLD;
             data.isPurgeActive = isPurgeActive;
+            data.isNetherSaved = isNetherSaved;
+            data.isOverworldSaved = isOverworldSaved;
+            data.isEndSaved = isEndSaved;
 
             data.markDirty();
             LOGGER.info("Undertale Extinct data saved successfully");
@@ -660,6 +1510,9 @@ public class UndertaleExtinct implements ModInitializer {
 
             EXTINCTION_THRESHOLD = data.extinctionThreshold;
             isPurgeActive = data.isPurgeActive;
+            isNetherSaved = data.isNetherSaved;
+            isOverworldSaved = data.isOverworldSaved;
+            isEndSaved = data.isEndSaved;
 
             LOGGER.info("Undertale Extinct data loaded: {} purged, {} extinct, {} tracked",
                     purgedMobs.size(), extinctMobs.size(), killCounts.size());
@@ -676,6 +1529,9 @@ public class UndertaleExtinct implements ModInitializer {
         public final Map<Identifier, Integer> killCounts = new ConcurrentHashMap<>();
         public int extinctionThreshold = 500;
         public boolean isPurgeActive = false;
+        public boolean isNetherSaved = false;
+        public boolean isOverworldSaved = false;
+        public boolean isEndSaved = false;
 
         public static ExtinctionData fromNbt(NbtCompound nbt) {
             ExtinctionData data = new ExtinctionData();
@@ -715,6 +1571,15 @@ public class UndertaleExtinct implements ModInitializer {
             if (nbt.contains("isPurgeActive")) {
                 data.isPurgeActive = nbt.getBoolean("isPurgeActive");
             }
+            if (nbt.contains("isNetherSaved")) {
+                data.isNetherSaved = nbt.getBoolean("isNetherSaved");
+            }
+            if (nbt.contains("isOverworldSaved")) {
+                data.isOverworldSaved = nbt.getBoolean("isOverworldSaved");
+            }
+            if (nbt.contains("isEndSaved")) {
+                data.isEndSaved = nbt.getBoolean("isEndSaved");
+            }
 
             return data;
         }
@@ -745,6 +1610,9 @@ public class UndertaleExtinct implements ModInitializer {
             // Save configuration
             nbt.putInt("extinctionThreshold", extinctionThreshold);
             nbt.putBoolean("isPurgeActive", isPurgeActive);
+            nbt.putBoolean("isNetherSaved", isNetherSaved);
+            nbt.putBoolean("isOverworldSaved", isOverworldSaved);
+            nbt.putBoolean("isEndSaved", isEndSaved);
 
             return nbt;
         }

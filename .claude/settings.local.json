@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew:*)",
+      "Bash(dir \"C:\\Users\\gabri\\Downloads\\UndertaleCraftMod\\build\\libs\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

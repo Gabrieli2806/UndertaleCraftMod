@@ -772,6 +772,7 @@ public class UndertaleExtinct implements ModInitializer {
             if (entity instanceof MobEntity mobEntity && entity.getType() != null) {
                 Identifier mobId = Registries.ENTITY_TYPE.getId(entity.getType());
 
+
                 // Handle nether saved mode spawning rules
                 if (isNetherSaved) {
                     handleNetherSavedSpawning(mobEntity, world);
@@ -780,7 +781,7 @@ public class UndertaleExtinct implements ModInitializer {
                     if (world.getRegistryKey() == World.OVERWORLD && !isNetherMob(mobEntity.getType()) && !isAquaticMob(mobEntity.getType())) {
                         // 25% chance to spawn a nether mob when any NON-AQUATIC overworld mob spawns
                         if (world instanceof ServerWorld) {
-                            ServerWorld serverWorld = (ServerWorld) world;
+                        ServerWorld serverWorld = (ServerWorld) world;
                             if (serverWorld.getRandom().nextFloat() < 0.25f) {
                                 spawnNetherMobNearLocation(serverWorld, mobEntity.getBlockPos());
                             }
@@ -791,6 +792,17 @@ public class UndertaleExtinct implements ModInitializer {
                 // Handle overworld saved mode spawning rules
                 if (isOverworldSaved) {
                     handleOverworldSavedSpawning(mobEntity, world);
+
+                    // Percentage-based pillager spawning when villagers spawn
+                    if (world.getRegistryKey() == World.OVERWORLD && mobEntity.getType() == EntityType.VILLAGER) {
+                        // 60% chance to spawn a peaceful pillager when a villager spawns
+                        if (world instanceof ServerWorld) {
+                        ServerWorld serverWorld = (ServerWorld) world;
+                            if (serverWorld.getRandom().nextFloat() < 0.60f) {
+                                spawnPeacefulPillagerNearLocation(serverWorld, mobEntity.getBlockPos());
+                            }
+                        }
+                    }
                 }
 
                 if (mobId != null && (purgedMobs.contains(mobId) || extinctMobs.contains(mobId))) {
@@ -833,6 +845,7 @@ public class UndertaleExtinct implements ModInitializer {
                                 handleExistingNetherMob(mobEntity, world);
                             }
 
+
                             // Handle overworld saved mode for existing mobs every 100 ticks (5 seconds)
                             if (isOverworldSaved && world.getTime() % 100 == 0) {
                                 handleExistingOverworldMob(mobEntity, world);
@@ -853,10 +866,8 @@ public class UndertaleExtinct implements ModInitializer {
                     spawnSniffersNaturally(world);
                 }
 
-                // Handle peaceful pillager spawning in villages and strongholds every 500 ticks (25 seconds)
-                if (isOverworldSaved && world.getRegistryKey() == World.OVERWORLD && world.getTime() % 500 == 0) {
-                    spawnPillagersInVillages(world);
-                }
+
+                // Timer-based pillager spawning removed - now handled via percentage-based spawning when villagers spawn
 
                 // Handle peaceful enderdragon spawning in the end every 800 ticks (40 seconds)
                 if (isEndSaved && world.getRegistryKey() == World.END && world.getTime() % 800 == 0) {
@@ -986,6 +997,10 @@ public class UndertaleExtinct implements ModInitializer {
             if (mobEntity instanceof PiglinBruteEntity piglinBrute) {
                 piglinBrute.setImmuneToZombification(true);
                 // Don't remove weapons, but make them deal no damage
+                mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, Integer.MAX_VALUE, 10, true, false));
+            }
+            // For zoglins and hoglins, apply weakness to prevent damage
+            if (mobEntity instanceof ZoglinEntity || mobEntity instanceof HoglinEntity) {
                 mobEntity.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, Integer.MAX_VALUE, 10, true, false));
             }
         }
@@ -1387,6 +1402,42 @@ public class UndertaleExtinct implements ModInitializer {
         }
     }
 
+    private void spawnPeacefulPillagerNearLocation(ServerWorld world, BlockPos location) {
+        Random random = world.getRandom();
+
+        // Spawn 8-16 blocks away from the villager location
+        int distance = 8 + random.nextInt(8);
+        double angle = random.nextDouble() * 2 * Math.PI;
+
+        int spawnX = (int) (location.getX() + Math.cos(angle) * distance);
+        int spawnZ = (int) (location.getZ() + Math.sin(angle) * distance);
+
+        // Find a suitable Y coordinate
+        BlockPos spawnPos = findSuitableSpawnPos(world, new BlockPos(spawnX, location.getY(), spawnZ));
+        if (spawnPos == null) return;
+
+        try {
+            // Create and spawn the pillager
+            PillagerEntity pillager = EntityType.PILLAGER.create(world);
+            if (pillager != null) {
+                pillager.refreshPositionAndAngles(spawnPos.getX() + 0.5, spawnPos.getY(), spawnPos.getZ() + 0.5,
+                    random.nextFloat() * 360.0F, 0.0F);
+
+                // Apply overworld saved effects immediately (peaceful, spared tag, team)
+                applyOverworldSavedEffects(pillager, world);
+
+                // Additional peaceful effects for pillagers
+                pillager.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 600, 0, true, false));
+                pillager.setTarget(null); // Ensure no hostility
+
+                world.spawnEntity(pillager);
+                LOGGER.debug("Spawned peaceful pillager near villager at {} for overworld saved mode", spawnPos);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Failed to spawn peaceful pillager near villager: {}", e.getMessage());
+        }
+    }
+
     private void spawnSniffersNaturally(net.minecraft.world.World world) {
         if (world instanceof ServerWorld serverWorld) {
             try {
@@ -1519,6 +1570,7 @@ public class UndertaleExtinct implements ModInitializer {
             }
         }
     }
+
 
     private void spawnPeacefulPillagerNearPlayer(ServerWorld world, net.minecraft.server.network.ServerPlayerEntity player) {
         Random random = world.getRandom();

@@ -377,10 +377,14 @@ public class UndertaleExtinct implements ModInitializer {
                                 ServerCommandSource source = context.getSource();
                                 
                                 UndertaleNetworking.sendStartAnimationToPlayer(targetPlayer);
-                                source.sendFeedback(() -> Text.literal("§6Starting Undertale animation for " + targetPlayer.getName().getString() + "..."), false);
-                                
-                                // Also notify the target player
-                                targetPlayer.sendMessage(Text.literal("§6An admin started the Undertale animation for you!"), false);
+                                if (config.isChatMessagesEnabled()) {
+                                    source.sendFeedback(() -> Text.literal("§6Starting Undertale animation for " + targetPlayer.getName().getString() + "..."), false);
+                                }
+
+                                // Also notify the target player (if chat messages enabled)
+                                if (config.isChatMessagesEnabled()) {
+                                    targetPlayer.sendMessage(Text.literal("§6An admin started the Undertale animation for you!"), false);
+                                }
                                 return 1;
                             })));
 

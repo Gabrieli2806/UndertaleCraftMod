@@ -144,9 +144,11 @@ public class UndertaleNetworking {
         // Save to vanilla scoreboard
         saveToVanillaScoreboard(player, attackValue);
         
-        // Send feedback to player about their score
-        String message = getAttackMessage(attackValue);
-        player.sendMessage(Text.literal(message), false);
+        // Send feedback to player about their score (only if chat messages are enabled)
+        if (ModConfig.getInstance().isChatMessagesEnabled()) {
+            String message = getAttackMessage(attackValue);
+            player.sendMessage(Text.literal(message), false);
+        }
         
         LOGGER.info("Player {} achieved attack value: {} - Saved to vanilla scoreboard", player.getName().getString(), attackValue);
     }
@@ -155,9 +157,11 @@ public class UndertaleNetworking {
         // Save to vanilla scoreboard
         saveGunAttackToVanillaScoreboard(player, gunAttackValue);
         
-        // Send feedback to player about their score
-        String message = getGunAttackMessage(gunAttackValue);
-        player.sendMessage(Text.literal(message), false);
+        // Send feedback to player about their score (only if chat messages are enabled)
+        if (ModConfig.getInstance().isChatMessagesEnabled()) {
+            String message = getGunAttackMessage(gunAttackValue);
+            player.sendMessage(Text.literal(message), false);
+        }
         
         LOGGER.info("Player {} achieved gun attack value: {} - Saved to vanilla scoreboard", player.getName().getString(), gunAttackValue);
     }
@@ -323,9 +327,11 @@ public class UndertaleNetworking {
         // Save to numbered vanilla scoreboard
         saveNumberedAttackToVanillaScoreboard(player, attackValue, attackNumber);
         
-        // Send feedback to player about their score
-        String message = getAttackMessage(attackValue) + " [Attack " + attackNumber + "]";
-        player.sendMessage(Text.literal(message), false);
+        // Send feedback to player about their score (only if chat messages are enabled)
+        if (ModConfig.getInstance().isChatMessagesEnabled()) {
+            String message = getAttackMessage(attackValue) + " [Attack " + attackNumber + "]";
+            player.sendMessage(Text.literal(message), false);
+        }
         
         LOGGER.info("Player {} achieved numbered attack {} value: {} - Saved to vanilla scoreboard", 
             player.getName().getString(), attackNumber, attackValue);
@@ -335,9 +341,11 @@ public class UndertaleNetworking {
         // Save to numbered vanilla scoreboard
         saveNumberedGunAttackToVanillaScoreboard(player, gunAttackValue, attackNumber);
         
-        // Send feedback to player about their score
-        String message = getGunAttackMessage(gunAttackValue) + " [Gun Attack " + attackNumber + "]";
-        player.sendMessage(Text.literal(message), false);
+        // Send feedback to player about their score (only if chat messages are enabled)
+        if (ModConfig.getInstance().isChatMessagesEnabled()) {
+            String message = getGunAttackMessage(gunAttackValue) + " [Gun Attack " + attackNumber + "]";
+            player.sendMessage(Text.literal(message), false);
+        }
         
         LOGGER.info("Player {} achieved numbered gun attack {} value: {} - Saved to vanilla scoreboard", 
             player.getName().getString(), attackNumber, gunAttackValue);

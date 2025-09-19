@@ -363,7 +363,9 @@ public class UndertaleExtinct implements ModInitializer {
                         ServerCommandSource source = context.getSource();
                         if (source.getEntity() instanceof ServerPlayerEntity player) {
                             UndertaleNetworking.sendStartAnimationToPlayer(player);
-                            source.sendFeedback(() -> Text.literal("§6Starting Undertale animation for you..."), false);
+                            if (config.isChatMessagesEnabled()) {
+                                source.sendFeedback(() -> Text.literal("§6Starting Undertale animation for you..."), false);
+                            }
                             return 1;
                         }
                         return 0;
@@ -389,7 +391,9 @@ public class UndertaleExtinct implements ModInitializer {
                         ServerCommandSource source = context.getSource();
                         if (source.getEntity() instanceof ServerPlayerEntity player) {
                             UndertaleNetworking.sendStartAttackToPlayer(player);
-                            source.sendFeedback(() -> Text.literal("§6Starting attack interface..."), false);
+                            if (config.isChatMessagesEnabled()) {
+                                source.sendFeedback(() -> Text.literal("§6Starting attack interface..."), false);
+                            }
                             return 1;
                         }
                         return 0;
@@ -402,10 +406,14 @@ public class UndertaleExtinct implements ModInitializer {
                                 ServerCommandSource source = context.getSource();
                                 
                                 UndertaleNetworking.sendStartAttackToPlayer(targetPlayer);
-                                source.sendFeedback(() -> Text.literal("§6Starting attack interface for " + targetPlayer.getName().getString() + "..."), false);
+                                if (config.isChatMessagesEnabled()) {
+                                    source.sendFeedback(() -> Text.literal("§6Starting attack interface for " + targetPlayer.getName().getString() + "..."), false);
+                                }
                                 
-                                // Also notify the target player
-                                targetPlayer.sendMessage(Text.literal("§6An admin started the attack interface for you!"), false);
+                                // Also notify the target player (if chat messages enabled)
+                                if (config.isChatMessagesEnabled()) {
+                                    targetPlayer.sendMessage(Text.literal("§6An admin started the attack interface for you!"), false);
+                                }
                                 return 1;
                             })));
             
@@ -416,7 +424,9 @@ public class UndertaleExtinct implements ModInitializer {
                         ServerCommandSource source = context.getSource();
                         if (source.getEntity() instanceof ServerPlayerEntity player) {
                             UndertaleNetworking.sendStartGunAttackToPlayer(player);
-                            source.sendFeedback(() -> Text.literal("§6Starting gun attack interface..."), false);
+                            if (config.isChatMessagesEnabled()) {
+                                source.sendFeedback(() -> Text.literal("§6Starting gun attack interface..."), false);
+                            }
                             return 1;
                         }
                         return 0;
@@ -429,10 +439,14 @@ public class UndertaleExtinct implements ModInitializer {
                                 ServerCommandSource source = context.getSource();
                                 
                                 UndertaleNetworking.sendStartGunAttackToPlayer(targetPlayer);
-                                source.sendFeedback(() -> Text.literal("§6Starting gun attack interface for " + targetPlayer.getName().getString() + "..."), false);
-                                
-                                // Also notify the target player
-                                targetPlayer.sendMessage(Text.literal("§6An admin started the gun attack interface for you!"), false);
+                                if (config.isChatMessagesEnabled()) {
+                                    source.sendFeedback(() -> Text.literal("§6Starting gun attack interface for " + targetPlayer.getName().getString() + "..."), false);
+                                }
+
+                                // Also notify the target player (if chat messages enabled)
+                                if (config.isChatMessagesEnabled()) {
+                                    targetPlayer.sendMessage(Text.literal("§6An admin started the gun attack interface for you!"), false);
+                                }
                                 return 1;
                             })));
 
@@ -624,7 +638,9 @@ public class UndertaleExtinct implements ModInitializer {
                             ServerCommandSource source = context.getSource();
                             if (source.getEntity() instanceof ServerPlayerEntity player) {
                                 UndertaleNetworking.sendStartNumberedAttackToPlayer(player, attackNumber);
-                                source.sendFeedback(() -> Text.literal("§6Starting attack interface " + attackNumber + "..."), false);
+                                if (config.isChatMessagesEnabled()) {
+                                    source.sendFeedback(() -> Text.literal("§6Starting attack interface " + attackNumber + "..."), false);
+                                }
                                 return 1;
                             }
                             return 0;
@@ -637,10 +653,14 @@ public class UndertaleExtinct implements ModInitializer {
                                     ServerCommandSource source = context.getSource();
                                     
                                     UndertaleNetworking.sendStartNumberedAttackToPlayer(targetPlayer, attackNumber);
-                                    source.sendFeedback(() -> Text.literal("§6Starting attack interface " + attackNumber + " for " + targetPlayer.getName().getString() + "..."), false);
-                                    
-                                    // Also notify the target player
-                                    targetPlayer.sendMessage(Text.literal("§6An admin started attack interface " + attackNumber + " for you!"), false);
+                                    if (config.isChatMessagesEnabled()) {
+                                        source.sendFeedback(() -> Text.literal("§6Starting attack interface " + attackNumber + " for " + targetPlayer.getName().getString() + "..."), false);
+                                    }
+
+                                    // Also notify the target player (if chat messages enabled)
+                                    if (config.isChatMessagesEnabled()) {
+                                        targetPlayer.sendMessage(Text.literal("§6An admin started attack interface " + attackNumber + " for you!"), false);
+                                    }
                                     return 1;
                                 })));
                 
@@ -651,7 +671,9 @@ public class UndertaleExtinct implements ModInitializer {
                             ServerCommandSource source = context.getSource();
                             if (source.getEntity() instanceof ServerPlayerEntity player) {
                                 UndertaleNetworking.sendStartNumberedGunAttackToPlayer(player, attackNumber);
-                                source.sendFeedback(() -> Text.literal("§6Starting gun attack interface " + attackNumber + "..."), false);
+                                if (config.isChatMessagesEnabled()) {
+                                    source.sendFeedback(() -> Text.literal("§6Starting gun attack interface " + attackNumber + "..."), false);
+                                }
                                 return 1;
                             }
                             return 0;
@@ -664,10 +686,14 @@ public class UndertaleExtinct implements ModInitializer {
                                     ServerCommandSource source = context.getSource();
                                     
                                     UndertaleNetworking.sendStartNumberedGunAttackToPlayer(targetPlayer, attackNumber);
-                                    source.sendFeedback(() -> Text.literal("§6Starting gun attack interface " + attackNumber + " for " + targetPlayer.getName().getString() + "..."), false);
-                                    
-                                    // Also notify the target player
-                                    targetPlayer.sendMessage(Text.literal("§6An admin started gun attack interface " + attackNumber + " for you!"), false);
+                                    if (config.isChatMessagesEnabled()) {
+                                        source.sendFeedback(() -> Text.literal("§6Starting gun attack interface " + attackNumber + " for " + targetPlayer.getName().getString() + "..."), false);
+                                    }
+
+                                    // Also notify the target player (if chat messages enabled)
+                                    if (config.isChatMessagesEnabled()) {
+                                        targetPlayer.sendMessage(Text.literal("§6An admin started gun attack interface " + attackNumber + " for you!"), false);
+                                    }
                                     return 1;
                                 })));
             }
@@ -991,8 +1017,6 @@ public class UndertaleExtinct implements ModInitializer {
                 // If all mob spawning is disabled (after vanillaextinctionfull), remove ALL mobs
                 if (allMobSpawningDisabled) {
                     mobEntity.discard();
-                    LOGGER.info("Removed mob due to complete spawning disable: {} at {} in {}",
-                        mobId, mobEntity.getBlockPos(), world.getRegistryKey().getValue());
                     return;
                 }
 
@@ -1055,8 +1079,6 @@ public class UndertaleExtinct implements ModInitializer {
                             // If all mob spawning is disabled, remove ALL mobs immediately
                             if (allMobSpawningDisabled) {
                                 mobEntity.discard();
-                                LOGGER.debug("Tick-removed mob due to complete spawning disable: {} at {}",
-                                    mobId, mobEntity.getBlockPos());
                                 return;
                             }
 

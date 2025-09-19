@@ -90,8 +90,8 @@ public class UndertaleAttackGunOverlay {
     private long attackStartTime = 0;
     private boolean wasMousePressed = false; // Track mouse state to prevent multiple clicks
     
-    // Slider movement settings (1.5x faster)
-    private static final float SLIDER_SPEED = 0.03f;
+    // Slider movement settings (configurable)
+    private static final float DEFAULT_SLIDER_SPEED = 0.03f;
     private static final long SLIDER_SPAWN_DELAY = 1000; // 1 second in milliseconds
     
     // Slash animation state
@@ -176,7 +176,8 @@ public class UndertaleAttackGunOverlay {
         // Update all moving sliders
         for (int i = 0; i < NUM_SLIDERS; i++) {
             if (sliderMoving[i] && !sliderFinished[i] && sliderSpawned[i]) {
-                sliderPositions[i] += SLIDER_SPEED;
+                float currentSpeed = ModConfig.getInstance().getAttackBarSpeedFloat();
+                sliderPositions[i] += currentSpeed;
                 
                 // Check if slider reached the end
                 if (sliderPositions[i] >= 1.0f) {

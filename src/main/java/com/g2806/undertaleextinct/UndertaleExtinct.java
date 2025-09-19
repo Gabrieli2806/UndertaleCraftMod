@@ -54,6 +54,7 @@ public class UndertaleExtinct implements ModInitializer {
 
     // Configuration
     private static int EXTINCTION_THRESHOLD = 500;
+    private static ModConfig config;
 
     // State management
     private static boolean isPurgeActive = false;
@@ -64,6 +65,61 @@ public class UndertaleExtinct implements ModInitializer {
     private static final Set<Identifier> extinctMobs = ConcurrentHashMap.newKeySet();
     private static final Map<Identifier, Integer> killCounts = new ConcurrentHashMap<>();
     private static final Map<UUID, Identifier> nextKillTargets = new ConcurrentHashMap<>();
+
+    // All vanilla hostile and neutral mobs that can be made extinct
+    private static final Set<Identifier> VANILLA_MOBS = Set.of(
+        // Hostile mobs
+        new Identifier("minecraft", "zombie"),
+        new Identifier("minecraft", "skeleton"),
+        new Identifier("minecraft", "creeper"),
+        new Identifier("minecraft", "spider"),
+        new Identifier("minecraft", "cave_spider"),
+        new Identifier("minecraft", "witch"),
+        new Identifier("minecraft", "enderman"),
+        new Identifier("minecraft", "blaze"),
+        new Identifier("minecraft", "ghast"),
+        new Identifier("minecraft", "magma_cube"),
+        new Identifier("minecraft", "slime"),
+        new Identifier("minecraft", "silverfish"),
+        new Identifier("minecraft", "endermite"),
+        new Identifier("minecraft", "guardian"),
+        new Identifier("minecraft", "elder_guardian"),
+        new Identifier("minecraft", "shulker"),
+        new Identifier("minecraft", "phantom"),
+        new Identifier("minecraft", "drowned"),
+        new Identifier("minecraft", "husk"),
+        new Identifier("minecraft", "stray"),
+        new Identifier("minecraft", "wither_skeleton"),
+        new Identifier("minecraft", "zombie_villager"),
+        new Identifier("minecraft", "pillager"),
+        new Identifier("minecraft", "vindicator"),
+        new Identifier("minecraft", "evoker"),
+        new Identifier("minecraft", "ravager"),
+        new Identifier("minecraft", "vex"),
+        new Identifier("minecraft", "piglin"),
+        new Identifier("minecraft", "piglin_brute"),
+        new Identifier("minecraft", "hoglin"),
+        new Identifier("minecraft", "zoglin"),
+        new Identifier("minecraft", "zombified_piglin"),
+        new Identifier("minecraft", "warden"),
+        // Neutral mobs that can be hostile
+        new Identifier("minecraft", "zombie_pigman"), // Legacy name
+        new Identifier("minecraft", "iron_golem"),
+        new Identifier("minecraft", "wolf"),
+        new Identifier("minecraft", "polar_bear"),
+        new Identifier("minecraft", "llama"),
+        new Identifier("minecraft", "trader_llama"),
+        new Identifier("minecraft", "panda"),
+        new Identifier("minecraft", "bee"),
+        new Identifier("minecraft", "dolphin"),
+        new Identifier("minecraft", "goat"),
+        // Boss mobs
+        new Identifier("minecraft", "ender_dragon"),
+        new Identifier("minecraft", "wither")
+    );
+
+    private static boolean allVanillaMobsExtinctNotified = false;
+    private static boolean allMobSpawningDisabled = false;
     
     // Animation player instance
     private static AnimationPlayer animationPlayer;
@@ -71,10 +127,13 @@ public class UndertaleExtinct implements ModInitializer {
     @Override
     public void onInitialize() {
         LOGGER.info("Undertale Extinct mod initialized!");
-        
+
+        // Initialize config
+        config = ModConfig.getInstance();
+
         // Initialize animation player
         animationPlayer = new AnimationPlayer();
-        
+
         // Initialize networking
         UndertaleNetworking.registerServerPackets();
 
@@ -197,9 +256,20 @@ public class UndertaleExtinct implements ModInitializer {
                         extinctMobs.clear();
                         killCounts.clear();
                         nextKillTargets.clear();
+                        allVanillaMobsExtinctNotified = false; // Reset vanilla extinction notification
+                        allMobSpawningDisabled = false; // Re-enable mob spawning
+
+                        // Reset scoreboard objective for world purge status
+                        ServerCommandSource source = context.getSource();
+                        if (source.getEntity() instanceof ServerPlayerEntity player) {
+                            MinecraftServer server = player.getServer();
+                            if (server != null) {
+                                setWorldPurgeScoreboard(server, false);
+                            }
+                        }
 
                         context.getSource().sendFeedback(() ->
-                                Text.literal("§aUndertale purge reset! All mobs restored, counters cleared."), false);
+                                Text.literal("§aUndertale purge reset! All mobs restored, counters cleared. Scoreboard: §eworldpurged = 0"), false);
                         return 1;
                     }));
 
@@ -239,7 +309,51 @@ public class UndertaleExtinct implements ModInitializer {
                                 context.getSource().sendFeedback(() ->
                                         Text.literal("§6Extinction threshold set to " + newThreshold + " kills. The genocide route requires more determination."), false);
                                 return 1;
-                            })));
+                            }))
+                    .then(CommandManager.literal("chatmessages")
+                            .then(CommandManager.literal("on")
+                                    .executes(context -> {
+                                        config.setChatMessagesEnabled(true);
+                                        context.getSource().sendFeedback(() ->
+                                                Text.literal("§aChatmessages enabled! You will see all extinction and save notifications."), false);
+                                        return 1;
+                                    }))
+                            .then(CommandManager.literal("off")
+                                    .executes(context -> {
+                                        config.setChatMessagesEnabled(false);
+                                        context.getSource().sendFeedback(() ->
+                                                Text.literal("§cChatmessages disabled! No more attack notifications will appear."), false);
+                                        return 1;
+                                    }))
+                            .executes(context -> {
+                                context.getSource().sendFeedback(() ->
+                                        Text.literal("§7Chat messages are currently: " + (config.isChatMessagesEnabled() ? "§aENABLED" : "§cDISABLED")), false);
+                                return 1;
+                            }))
+                    .then(CommandManager.literal("attackspeed")
+                            .then(CommandManager.argument("speed", com.mojang.brigadier.arguments.DoubleArgumentType.doubleArg(0.01, 0.1))
+                                    .executes(context -> {
+                                        double newSpeed = com.mojang.brigadier.arguments.DoubleArgumentType.getDouble(context, "speed");
+                                        config.setAttackBarSpeed(newSpeed);
+                                        context.getSource().sendFeedback(() ->
+                                                Text.literal("§6Attack bar speed set to " + String.format("%.3f", newSpeed) + ". Higher = faster, lower = slower."), false);
+                                        return 1;
+                                    }))
+                            .executes(context -> {
+                                context.getSource().sendFeedback(() ->
+                                        Text.literal("§7Current attack bar speed: §f" + String.format("%.3f", config.getAttackBarSpeed()) + " §7(default: 0.030)"), false);
+                                return 1;
+                            }))
+                    .executes(context -> {
+                        ServerCommandSource source = context.getSource();
+                        source.sendFeedback(() -> Text.literal("§6=== UNDERTALE MOD CONFIG ==="), false);
+                        source.sendFeedback(() -> Text.literal("§7Chat Messages: " + (config.isChatMessagesEnabled() ? "§aENABLED" : "§cDISABLED")), false);
+                        source.sendFeedback(() -> Text.literal("§7Attack Bar Speed: §f" + String.format("%.3f", config.getAttackBarSpeed()) + " §7(default: 0.030)"), false);
+                        source.sendFeedback(() -> Text.literal("§7Extinction Threshold: §f" + EXTINCTION_THRESHOLD + " kills"), false);
+                        source.sendFeedback(() -> Text.literal("§e/undertaleconfig chatmessages [on|off] §7- Toggle chat notifications"), false);
+                        source.sendFeedback(() -> Text.literal("§e/undertaleconfig attackspeed <0.01-0.1> §7- Set attack bar speed"), false);
+                        return 1;
+                    }));
 
             // Command to play Undertale animation (self or target player)
             dispatcher.register(CommandManager.literal("playundertaleanimation")
@@ -592,6 +706,26 @@ public class UndertaleExtinct implements ModInitializer {
                         }
                         return 0;
                     }));
+
+            // Vanilla mob extinction progress command
+            dispatcher.register(CommandManager.literal("vanillaextinction")
+                    .requires(source -> source.hasPermissionLevel(0)) // Allow all players
+                    .executes(context -> {
+                        addVanillaExtinctionCommand(context.getSource());
+                        return 1;
+                    }));
+
+            // Command to instantly exterminate all vanilla mobs
+            dispatcher.register(CommandManager.literal("vanillaextinctionfull")
+                    .requires(source -> source.hasPermissionLevel(2)) // Admin only
+                    .executes(context -> {
+                        ServerCommandSource source = context.getSource();
+                        if (source.getEntity() instanceof ServerPlayerEntity player) {
+                            executeFullVanillaExtinction(player, source);
+                            return 1;
+                        }
+                        return 0;
+                    }));
         });
     }
 
@@ -786,8 +920,10 @@ public class UndertaleExtinct implements ModInitializer {
                     purgedMobs.add(mobId);
                     nextKillTargets.remove(player.getUuid());
 
-                    player.sendMessage(Text.literal("§4" + entityType.getName().getString() +
-                            " have been purged from existence forever!"), false);
+                    if (config.isChatMessagesEnabled()) {
+                        player.sendMessage(Text.literal("§4" + entityType.getName().getString() +
+                                " have been purged from existence forever!"), false);
+                    }
                     LOGGER.info("Player {} purged mob type: {}", player.getName().getString(), mobId);
                     return;
                 }
@@ -803,8 +939,10 @@ public class UndertaleExtinct implements ModInitializer {
                         purgedMobs.add(mobId); // Also add to purged set
 
                         // Send extinction notification
-                        player.sendMessage(Text.literal("§4" + entityType.getName().getString() +
-                                " are now extinct! Their kind has been erased from existence! (Killed " + currentCount + " times)"), false);
+                        if (config.isChatMessagesEnabled()) {
+                            player.sendMessage(Text.literal("§4" + entityType.getName().getString() +
+                                    " are now extinct! Their kind has been erased from existence! (Killed " + currentCount + " times)"), false);
+                        }
 
                         // INSTANT EXTINCTION: Kill all remaining mobs of this type in all loaded worlds
                         MinecraftServer server = player.getServer();
@@ -822,7 +960,7 @@ public class UndertaleExtinct implements ModInitializer {
                             }
 
                             // Notify about the mass extinction
-                            if (killedCount > 0) {
+                            if (killedCount > 0 && config.isChatMessagesEnabled()) {
                                 final int finalKilledCount = killedCount;
                                 final String mobName = entityType.getName().getString();
                                 player.sendMessage(Text.literal("§c💀 GENOCIDE EVENT: " + finalKilledCount +
@@ -833,7 +971,10 @@ public class UndertaleExtinct implements ModInitializer {
 
                         LOGGER.info("Mob type {} went extinct after {} kills by {}",
                                 mobId, currentCount, player.getName().getString());
-                    } else if (currentCount % 50 == 0) {
+
+                        // Check if all vanilla mobs are now extinct
+                        checkAllVanillaMobsExtinct(player);
+                    } else if (currentCount % 50 == 0 && config.isChatMessagesEnabled()) {
                         // Progress notification every 50 kills
                         player.sendMessage(Text.literal("§7" + entityType.getName().getString() +
                                 " kill count: " + currentCount + "/" + EXTINCTION_THRESHOLD), true);
@@ -846,6 +987,14 @@ public class UndertaleExtinct implements ModInitializer {
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
             if (entity instanceof MobEntity mobEntity && entity.getType() != null) {
                 Identifier mobId = Registries.ENTITY_TYPE.getId(entity.getType());
+
+                // If all mob spawning is disabled (after vanillaextinctionfull), remove ALL mobs
+                if (allMobSpawningDisabled) {
+                    mobEntity.discard();
+                    LOGGER.info("Removed mob due to complete spawning disable: {} at {} in {}",
+                        mobId, mobEntity.getBlockPos(), world.getRegistryKey().getValue());
+                    return;
+                }
 
 
                 // Handle nether saved mode spawning rules
@@ -903,6 +1052,14 @@ public class UndertaleExtinct implements ModInitializer {
                         if (entityType != null) {
                             Identifier mobId = Registries.ENTITY_TYPE.getId(entityType);
 
+                            // If all mob spawning is disabled, remove ALL mobs immediately
+                            if (allMobSpawningDisabled) {
+                                mobEntity.discard();
+                                LOGGER.debug("Tick-removed mob due to complete spawning disable: {} at {}",
+                                    mobId, mobEntity.getBlockPos());
+                                return;
+                            }
+
                             // Handle extinct/purged mob removal
                             if (mobId != null && (purgedMobs.contains(mobId) || extinctMobs.contains(mobId))) {
                                 // Don't remove mobs that were spawned as part of nether saved system
@@ -936,8 +1093,8 @@ public class UndertaleExtinct implements ModInitializer {
 
                 // Timer-based nether mob spawning removed - now handled via percentage-based spawning on natural spawns
 
-                // Handle natural sniffer spawning every 600 ticks (30 seconds)
-                if (world.getRegistryKey() == World.OVERWORLD && world.getTime() % 600 == 0) {
+                // Handle natural sniffer spawning every 600 ticks (30 seconds) - only when overworld is saved
+                if (isOverworldSaved && world.getRegistryKey() == World.OVERWORLD && world.getTime() % 600 == 0) {
                     spawnSniffersNaturally(world);
                 }
 
@@ -1722,6 +1879,8 @@ public class UndertaleExtinct implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             loadModData(server);
             UndertaleScoreboard.loadScores(server);
+            // Initialize scoreboard based on current purge status
+            setWorldPurgeScoreboard(server, allMobSpawningDisabled);
         });
 
         // Periodic autosave every 5 minutes
@@ -1762,6 +1921,8 @@ public class UndertaleExtinct implements ModInitializer {
             data.isNetherSaved = isNetherSaved;
             data.isOverworldSaved = isOverworldSaved;
             data.isEndSaved = isEndSaved;
+            data.allVanillaMobsExtinctNotified = allVanillaMobsExtinctNotified;
+            data.allMobSpawningDisabled = allMobSpawningDisabled;
 
             data.markDirty();
             LOGGER.info("Undertale Extinct data saved successfully");
@@ -1794,6 +1955,8 @@ public class UndertaleExtinct implements ModInitializer {
             isNetherSaved = data.isNetherSaved;
             isOverworldSaved = data.isOverworldSaved;
             isEndSaved = data.isEndSaved;
+            allVanillaMobsExtinctNotified = data.allVanillaMobsExtinctNotified;
+            allMobSpawningDisabled = data.allMobSpawningDisabled;
 
             LOGGER.info("Undertale Extinct data loaded: {} purged, {} extinct, {} tracked",
                     purgedMobs.size(), extinctMobs.size(), killCounts.size());
@@ -1813,6 +1976,8 @@ public class UndertaleExtinct implements ModInitializer {
         public boolean isNetherSaved = false;
         public boolean isOverworldSaved = false;
         public boolean isEndSaved = false;
+        public boolean allVanillaMobsExtinctNotified = false;
+        public boolean allMobSpawningDisabled = false;
 
         public static ExtinctionData fromNbt(NbtCompound nbt) {
             ExtinctionData data = new ExtinctionData();
@@ -1861,6 +2026,12 @@ public class UndertaleExtinct implements ModInitializer {
             if (nbt.contains("isEndSaved")) {
                 data.isEndSaved = nbt.getBoolean("isEndSaved");
             }
+            if (nbt.contains("allVanillaMobsExtinctNotified")) {
+                data.allVanillaMobsExtinctNotified = nbt.getBoolean("allVanillaMobsExtinctNotified");
+            }
+            if (nbt.contains("allMobSpawningDisabled")) {
+                data.allMobSpawningDisabled = nbt.getBoolean("allMobSpawningDisabled");
+            }
 
             return data;
         }
@@ -1894,6 +2065,8 @@ public class UndertaleExtinct implements ModInitializer {
             nbt.putBoolean("isNetherSaved", isNetherSaved);
             nbt.putBoolean("isOverworldSaved", isOverworldSaved);
             nbt.putBoolean("isEndSaved", isEndSaved);
+            nbt.putBoolean("allVanillaMobsExtinctNotified", allVanillaMobsExtinctNotified);
+            nbt.putBoolean("allMobSpawningDisabled", allMobSpawningDisabled);
 
             return nbt;
         }
@@ -1945,5 +2118,243 @@ public class UndertaleExtinct implements ModInitializer {
 
     public static int getExtinctionThreshold() {
         return EXTINCTION_THRESHOLD;
+    }
+
+    private static void checkAllVanillaMobsExtinct(ServerPlayerEntity player) {
+        if (allVanillaMobsExtinctNotified) {
+            return; // Already notified
+        }
+
+        // Check if all vanilla mobs are extinct
+        boolean allExtinct = true;
+        int extinctCount = 0;
+        final int totalVanillaMobs = VANILLA_MOBS.size();
+
+        for (Identifier vanillaMob : VANILLA_MOBS) {
+            if (extinctMobs.contains(vanillaMob) || purgedMobs.contains(vanillaMob)) {
+                extinctCount++;
+            } else {
+                allExtinct = false;
+            }
+        }
+
+        final int finalExtinctCount = extinctCount;
+        // Calculate percentage of vanilla mobs extinct
+        int percentageExtinct = (extinctCount * 100) / totalVanillaMobs;
+
+        // Send periodic progress updates
+        if (percentageExtinct >= 25 && percentageExtinct % 25 == 0 && config.isChatMessagesEnabled()) {
+            String message = switch (percentageExtinct) {
+                case 25 -> "§6¼ of all vanilla monsters have been exterminated... The world grows quieter.";
+                case 50 -> "§c½ of all vanilla monsters are extinct... Nature is out of balance.";
+                case 75 -> "§4¾ of all vanilla monsters have vanished... The apocalypse approaches.";
+                default -> "";
+            };
+            if (!message.isEmpty()) {
+                player.sendMessage(Text.literal(message + " (" + finalExtinctCount + "/" + totalVanillaMobs + ")"), false);
+            }
+        }
+
+        // If all vanilla mobs are extinct, send special notification
+        if (allExtinct) {
+            allVanillaMobsExtinctNotified = true;
+
+            if (config.isChatMessagesEnabled()) {
+                // Epic extinction completion message
+                player.sendMessage(Text.literal(""), false);
+                player.sendMessage(Text.literal("§4§l=============================================="), false);
+                player.sendMessage(Text.literal("§4§l        🗭 TOTAL VANILLA EXTINCTION 🗭"), false);
+                player.sendMessage(Text.literal("§4§l=============================================="), false);
+                player.sendMessage(Text.literal(""), false);
+                player.sendMessage(Text.literal("§c💀 ALL " + totalVanillaMobs + " VANILLA MONSTER SPECIES ARE EXTINCT! 💀"), false);
+                player.sendMessage(Text.literal(""), false);
+                player.sendMessage(Text.literal("§7The world is now completely devoid of vanilla monsters."), false);
+                player.sendMessage(Text.literal("§7No zombies. No skeletons. No creepers. Nothing."), false);
+                player.sendMessage(Text.literal("§7You have achieved what no player has done before:"), false);
+                player.sendMessage(Text.literal("§4§lCOMPLETE MONSTER GENOCIDE"), false);
+                player.sendMessage(Text.literal(""), false);
+                player.sendMessage(Text.literal("§6The silence is deafening... but perhaps there's still hope"), false);
+                player.sendMessage(Text.literal("§6for salvation through the power of mercy and love."), false);
+                player.sendMessage(Text.literal(""), false);
+                player.sendMessage(Text.literal("§e§l✦ ACHIEVEMENT UNLOCKED: Monster Extinction Master ✦"), false);
+                player.sendMessage(Text.literal("§4§l=============================================="), false);
+            }
+
+            // Grant special advancement or effect
+            grantVanillaExtinctionAdvancement(player);
+
+            LOGGER.info("Player {} has made ALL vanilla mobs extinct! Total: {}/{}",
+                    player.getName().getString(), finalExtinctCount, totalVanillaMobs);
+        }
+    }
+
+    private static void grantVanillaExtinctionAdvancement(ServerPlayerEntity player) {
+        try {
+            // Grant a special status effect to mark this achievement
+            player.addStatusEffect(new StatusEffectInstance(StatusEffects.HERO_OF_THE_VILLAGE, 72000, 2, true, true)); // 1 hour
+
+            // Play epic sound effects
+            player.playSound(net.minecraft.sound.SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 0.5f);
+            player.playSound(net.minecraft.sound.SoundEvents.ENTITY_ENDER_DRAGON_DEATH, 0.5f, 0.5f);
+            player.playSound(net.minecraft.sound.SoundEvents.ENTITY_WITHER_DEATH, 0.3f, 0.7f);
+
+            LOGGER.info("Granted vanilla extinction master effects to {}", player.getName().getString());
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to grant vanilla extinction advancement effects", e);
+        }
+    }
+
+    // Add command to check vanilla extinction progress
+    public static void addVanillaExtinctionCommand(ServerCommandSource source) {
+        int extinctCount = 0;
+        final int totalVanillaMobs = VANILLA_MOBS.size();
+
+        for (Identifier vanillaMob : VANILLA_MOBS) {
+            if (extinctMobs.contains(vanillaMob) || purgedMobs.contains(vanillaMob)) {
+                extinctCount++;
+            }
+        }
+
+        final int finalExtinctCount = extinctCount;
+        final int percentageExtinct = (extinctCount * 100) / totalVanillaMobs;
+
+        source.sendFeedback(() -> Text.literal("§6=== VANILLA MOB EXTINCTION PROGRESS ==="), false);
+        source.sendFeedback(() -> Text.literal("§7Extinct Species: §c" + finalExtinctCount + "§7/§f" + totalVanillaMobs + " §7(" + percentageExtinct + "%)"), false);
+
+        if (extinctCount == totalVanillaMobs) {
+            source.sendFeedback(() -> Text.literal("§4§l🗭 ALL VANILLA MOBS ARE EXTINCT! 🗭"), false);
+        } else {
+            final int remaining = totalVanillaMobs - extinctCount;
+            source.sendFeedback(() -> Text.literal("§7Remaining: §a" + remaining + " §7species still exist"), false);
+
+            // Show some of the remaining mobs
+            if (remaining <= 10) {
+                source.sendFeedback(() -> Text.literal("§7Still alive:"), false);
+                for (Identifier vanillaMob : VANILLA_MOBS) {
+                    if (!extinctMobs.contains(vanillaMob) && !purgedMobs.contains(vanillaMob)) {
+                        final String mobName = vanillaMob.getPath().replace("_", " ");
+                        source.sendFeedback(() -> Text.literal("§a- " + mobName), false);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void executeFullVanillaExtinction(ServerPlayerEntity player, ServerCommandSource source) {
+        source.sendFeedback(() -> Text.literal("§4§l=== INITIATING FULL VANILLA EXTINCTION ==="), false);
+        source.sendFeedback(() -> Text.literal("§cExecuting complete genocide protocol..."), false);
+
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            source.sendFeedback(() -> Text.literal("§cError: Server not available"), false);
+            return;
+        }
+
+        int totalExterminated = 0;
+        int totalKilled = 0;
+
+        // Add all vanilla mobs to extinct and purged lists (like /exterminate command)
+        for (Identifier vanillaMob : VANILLA_MOBS) {
+            if (!extinctMobs.contains(vanillaMob) && !purgedMobs.contains(vanillaMob)) {
+                extinctMobs.add(vanillaMob);
+                purgedMobs.add(vanillaMob);
+                killCounts.put(vanillaMob, EXTINCTION_THRESHOLD); // Set kill count to threshold
+                totalExterminated++;
+            }
+        }
+
+        // Kill all existing vanilla mobs in all loaded worlds (like /exterminate command)
+        for (ServerWorld serverWorld : server.getWorlds()) {
+            for (Identifier vanillaMob : VANILLA_MOBS) {
+                // Get the EntityType from the Identifier
+                EntityType<?> entityType = Registries.ENTITY_TYPE.get(vanillaMob);
+                if (entityType != null) {
+                    // Kill all existing mobs of this type (same logic as /exterminate)
+                    for (Object entityObj : serverWorld.getEntitiesByType(entityType, livingEntity -> livingEntity.isAlive())) {
+                        if (entityObj instanceof MobEntity mobEntity) {
+                            // Don't kill mobs that were spawned as part of nether/overworld saved system
+                            if (!mobEntity.getCommandTags().contains("nether_saved_spawn") &&
+                                !mobEntity.getCommandTags().contains("spared")) {
+                                mobEntity.damage(serverWorld.getDamageSources().genericKill(), Float.MAX_VALUE);
+                                totalKilled++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        final int finalTotalExterminated = totalExterminated;
+        final int finalTotalKilled = totalKilled;
+        final int totalVanillaMobs = VANILLA_MOBS.size();
+
+        // Send completion messages
+        source.sendFeedback(() -> Text.literal("§4💀 FULL VANILLA EXTINCTION COMPLETE! 💀"), false);
+        source.sendFeedback(() -> Text.literal("§cSpecies marked extinct: §f" + finalTotalExterminated + "§c/§f" + totalVanillaMobs), false);
+        source.sendFeedback(() -> Text.literal("§cLiving mobs eliminated: §f" + finalTotalKilled), false);
+
+        // Enable complete mob spawning disable - no mobs can spawn anywhere
+        allMobSpawningDisabled = true;
+
+        // Set scoreboard objective for world purge status
+        setWorldPurgeScoreboard(server, true);
+
+        // Force the vanilla extinction check and notification
+        allVanillaMobsExtinctNotified = false; // Reset so we can trigger the notification
+        checkAllVanillaMobsExtinct(player);
+
+        // Additional feedback about complete spawning disable
+        source.sendFeedback(() -> Text.literal("§4§lWARNING: ALL mob spawning has been permanently disabled!"), false);
+        source.sendFeedback(() -> Text.literal("§7The world is now completely lifeless - no mobs will spawn anywhere."), false);
+        source.sendFeedback(() -> Text.literal("§7Scoreboard: §eworldpurged = 1"), false);
+
+        LOGGER.info("Player {} executed full vanilla extinction: {} species extinct, {} mobs killed",
+                   player.getName().getString(), finalTotalExterminated, finalTotalKilled);
+    }
+
+    private static void setWorldPurgeScoreboard(MinecraftServer server, boolean purged) {
+        try {
+            var scoreboard = server.getScoreboard();
+
+            // Create or get the "worldpurged" objective
+            var objective = scoreboard.getNullableObjective("worldpurged");
+            if (objective == null) {
+                objective = scoreboard.addObjective("worldpurged",
+                    net.minecraft.scoreboard.ScoreboardCriterion.DUMMY,
+                    Text.literal("World Purge Status"),
+                    net.minecraft.scoreboard.ScoreboardCriterion.RenderType.INTEGER);
+                LOGGER.info("Created worldpurged scoreboard objective");
+            }
+
+            // Set the score for a global entity (the server itself)
+            String globalEntity = "#global";
+            var score = scoreboard.getPlayerScore(globalEntity, objective);
+            score.setScore(purged ? 1 : 0);
+
+            LOGGER.info("Set worldpurged scoreboard to {} for global tracking", purged ? 1 : 0);
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to set worldpurged scoreboard: {}", e.getMessage());
+        }
+    }
+
+    // Utility method to check world purge status via scoreboard
+    public static boolean isWorldPurged(MinecraftServer server) {
+        try {
+            var scoreboard = server.getScoreboard();
+            var objective = scoreboard.getNullableObjective("worldpurged");
+            if (objective == null) {
+                return false;
+            }
+
+            String globalEntity = "#global";
+            var score = scoreboard.getPlayerScore(globalEntity, objective);
+            return score.getScore() == 1;
+
+        } catch (Exception e) {
+            LOGGER.debug("Failed to check worldpurged scoreboard: {}", e.getMessage());
+            return false;
+        }
     }
 }

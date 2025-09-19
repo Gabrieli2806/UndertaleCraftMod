@@ -58,7 +58,7 @@ public class UndertaleAttackOverlay {
     
     // Slider movement state
     private float sliderPosition = 0.0f; // 0.0 = left, 1.0 = right
-    private float sliderSpeed = 0.03f;   // Speed of movement (1.5x faster)
+    private float sliderSpeed = 0.03f;   // Speed of movement (configurable)
     private boolean sliderMoving = true; // true = still moving, false = stopped
     private boolean sliderFinished = false; // true = reached end or clicked
     private int attackValue = 0; // 0-100 value based on click position
@@ -116,9 +116,12 @@ public class UndertaleAttackOverlay {
     }
     
     private void updateSliderPosition() {
+        // Get current speed from config
+        float currentSpeed = ModConfig.getInstance().getAttackBarSpeedFloat();
+
         // Move slider only left to right (once)
         if (sliderMoving) {
-            sliderPosition += sliderSpeed;
+            sliderPosition += currentSpeed;
             if (sliderPosition >= 1.0f) {
                 sliderPosition = 1.0f;
                 sliderMoving = false; // Stop moving
